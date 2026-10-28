@@ -1,0 +1,44 @@
+name: Windows desktop build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths: ['desktop/**', 'web/**', 'tests/**', 'package.json', '.github/workflows/desktop-windows.yml']
+  pull_request:
+    paths: ['desktop/**', 'web/**', 'tests/**', 'package.json', '.github/workflows/desktop-windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write # 只有推 v* tag 時才用來附加 Release 檔案
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: 核心計算測試(對照原 Excel 數值)
+        run: npm test
+      - name: 打包免安裝版(portable)
+        run: npm run dist:win
+      - name: 啟動打包後的程式、上傳 .xlsm、截圖
+        run: node tests/electron-smoke.mjs dist/win-unpacked/PortfolioTool.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PortfolioTool-portable
+          path: dist/PortfolioTool-*-portable.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-screenshot
+          path: artifacts/desktop.png
+      - name: 附加到 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PortfolioTool-*-portable.exe

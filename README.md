@@ -16,3 +16,9 @@
 ## 與 Excel 的已知差異
 - Excel 的日序列延伸到「更新當天」,多出的未來日損益為 0,會讓每日浮動區間的平均與標準差略有不同;本工具只到資料最後一天。
 - 「保證金檢核」沿用原公式(所需保證金 < 最少資金準備 才顯示 YES),邏輯看起來可能與直覺相反,請自行確認。
+
+## Windows 免安裝版(portable)
+- `.github/workflows/desktop-windows.yml` 在 `windows-latest` 上:跑 `npm test` → `npm run dist:win` 打包 → 啟動打包後的 exe、上傳原 `.xlsm`、檢查畫面數字並截圖。
+- 產物在該次 Actions 執行頁的 Artifacts:`PortfolioTool-portable`(單一 `.exe`,雙擊即用)與 `desktop-screenshot`。
+- 推 `v*` tag(例如 `v0.1.0`)時,會把 `.exe` 附到 GitHub Release。
+- 尚未簽章,Windows SmartScreen 第一次執行會警告(更多資訊 → 仍要執行)。

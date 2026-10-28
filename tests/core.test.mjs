@@ -1,8 +1,9 @@
 // 以原 Excel 的快取值驗證 core.js。fixture 由 .xlsm 匯出(見 tests/README.md)。
 import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { computeReport, parseDate, fmtDate } from '../web/src/core.js';
 
-const path = process.argv[2] || new URL('./fixture.json', import.meta.url).pathname;
+const path = process.argv[2] || fileURLToPath(new URL('./fixture.json', import.meta.url));
 if (!existsSync(path)) { console.log('找不到 fixture,略過'); process.exit(0); }
 const fx = JSON.parse(readFileSync(path, 'utf8'));
 const strategies = fx.alloc.map((w, k) => ({
