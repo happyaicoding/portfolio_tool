@@ -7,11 +7,11 @@
   "main": "desktop/main.cjs",
   "scripts": {
     "start": "python3 -m http.server 8000 --directory web",
-    "test": "node tests/xlsm.test.mjs",
+    "test": "node tests/parse.test.mjs && node tests/xlsm.test.mjs",
     "desktop": "electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win portable --x64",
-    "smoke": "node tests/electron-smoke.mjs"
+    "smoke": "node tests/electron-smoke.mjs && node tests/folder-smoke.mjs"
   },
   "devDependencies": {
     "electron": "^33.0.0",

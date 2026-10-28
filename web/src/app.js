@@ -19,7 +19,7 @@ function loadSettings() {
 
 // ---------- 讀檔 ----------
 
-async function ingest(files) {
+async function ingest(files, { reload = false } = {}) {
   const status = $('status');
   status.className = 'status';
   status.textContent = '讀取中…';
@@ -33,17 +33,21 @@ async function ingest(files) {
       loaded.push(...got);
     }
     const seen = new Map();
+    const oldAlloc = new Map(strategies.map((s) => [s.name, s.allocation]));
     strategies = loaded.map((s) => {
       const c = (seen.get(s.name) || 0) + 1;
       seen.set(s.name, c);
-      return { ...s, name: c > 1 ? `${s.name}(${c})` : s.name, allocation: 1 };
+      const name = c > 1 ? `${s.name}(${c})` : s.name;
+      return { ...s, name, allocation: oldAlloc.get(name) ?? 1 }; // 重新載入時保留已調整的權重
     });
     const all = strategies.flatMap((s) => s.rows.map((r) => r[0]));
     const min = Math.min(...all), max = Math.max(...all);
     status.textContent = `已載入 ${strategies.length} 個策略,${fmtDate(min)} ~ ${fmtDate(max)}`;
-    $('startDate').value = fileStart != null ? fmtDate(fileStart) : '';
+    if (!reload) {
+      $('startDate').value = fileStart != null ? fmtDate(fileStart) : '';
+      $('endDate').value = '';
+    }
     $('startDate').placeholder = fmtDate(min);
-    $('endDate').value = '';
     buildAllocInputs();
     $('app').hidden = false;
     render();
@@ -192,3 +196,28 @@ drop.addEventListener('drop', (e) => {
   drop.classList.remove('over');
   if (e.dataTransfer.files.length) ingest([...e.dataTransfer.files]);
 });
+
+// ---------- 桌面版:自動讀取資料夾內所有 CSV ----------
+
+if (window.desktop) {
+  const bar = $('folderBar');
+  bar.hidden = false;
+  let first = true;
+  const showFolder = async () => { $('folderPath').textContent = await window.desktop.getFolder(); };
+  const loadFolder = async () => {
+    const files = await window.desktop.readFolder();
+    if (!files.length) {
+      $('status').className = 'status err';
+      $('status').textContent = '資料夾內沒有 CSV 檔(把各策略的日損益 CSV 放進去即可)';
+      return;
+    }
+    await ingest(files.map((f) => new File([f.data], f.name)), { reload: !first });
+    first = false;
+  };
+  $('chooseFolder').addEventListener('click', async () => {
+    if (await window.desktop.chooseFolder()) { first = true; await showFolder(); await loadFolder(); }
+  });
+  $('reloadFolder').addEventListener('click', loadFolder);
+  window.desktop.onFolderChanged(loadFolder); // 資料夾內檔案有增減或修改,自動重讀
+  showFolder().then(loadFolder);
+}

@@ -49,3 +49,9 @@ th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .chart.small { margin-top: 4px; }
 .axis { fill: var(--muted); font-size: 11px; }
 @media (max-width: 600px) { .card .v { font-size: 18px; } }
+
+.folder[hidden] { display: none; }
+.folder { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 16px; }
+.folder code { word-break: break-all; }
+.folder .actions { display: flex; gap: 12px; }
+.folder span { color: var(--muted); font-size: 13px; flex-basis: 100%; }
