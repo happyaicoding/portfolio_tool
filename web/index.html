@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>黃金龜績效報表</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <h1>黃金龜 · 投資組合績效報表</h1>
+  <p class="sub">上傳各策略的日損益,自動計算績效、月/年損益與創高天數。資料只在你的瀏覽器內處理,不會上傳。</p>
+</header>
+
+<main>
+  <section id="drop" class="drop" tabindex="0">
+    <input id="file" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xlsm" hidden>
+    <strong>拖曳檔案到這裡,或<button id="pick" type="button">選擇檔案</button></strong>
+    <span>支援 CSV / Excel(.xlsx、.xlsm)。可一次選多個:每個檔案一個策略(日期、損益兩欄),或一張寬表(第一欄日期、其餘每欄一個策略)。原報表的「文字檔」工作表也能直接讀。</span>
+    <span id="status" class="status" role="status"></span>
+  </section>
+
+  <div id="app" hidden>
+    <section class="panel" id="settings">
+      <h2>設定</h2>
+      <div class="grid">
+        <label>下單商品
+          <select id="product"><option value="TX">TX(大台)</option><option value="MTX">MTX(小台)</option><option value="TMF">TMF(微台)</option></select></label>
+        <label>比例<input id="ratio" type="number" step="0.1" min="0"></label>
+        <label>計算年份<input id="calcYear" type="number" step="1"></label>
+        <label>起始日<input id="startDate" type="date"></label>
+        <label>資料結束日<input id="endDate" type="date"></label>
+        <label>大台保證金<input id="txMargin" type="number" step="1000"></label>
+        <label>自訂資金(空白=最少資金)<input id="capital" type="number" step="10000"></label>
+        <label>創高顯示門檻(天)<input id="threshold" type="number" step="1" min="0"></label>
+      </div>
+      <div class="grid lots">
+        <label>總口數<input id="lotTotal" type="number" min="0"></label>
+        <label>當沖<input id="lotDay" type="number" min="0"></label>
+        <label>留倉<input id="lotHold" type="number" min="0"></label>
+        <label>超額保證金<input id="lotExcess" type="number" min="0"></label>
+      </div>
+      <details>
+        <summary>策略配置權重</summary>
+        <div id="alloc" class="grid alloc"></div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>績效總表</h2>
+      <div id="kpi" class="kpi"></div>
+    </section>
+
+    <section class="panel">
+      <h2>資金曲線與回落</h2>
+      <div class="chart" id="chartEquity"></div>
+      <div class="chart small" id="chartDD"></div>
+    </section>
+
+    <section class="panel">
+      <h2>月 / 年損益矩陣</h2>
+      <div class="scroll"><table id="matrix" class="matrix"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>創高天數</h2>
+      <p id="highSummary" class="lead"></p>
+      <div class="scroll"><table id="streaks" class="plain"></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>資金與保證金規劃</h2>
+      <div id="plan" class="kpi"></div>
+    </section>
+  </div>
+</main>
+<footer>公式移植自原 Excel 報表,以 <code>tests/</code> 內的測試對照原檔數值。僅供研究參考,不構成投資建議。</footer>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
