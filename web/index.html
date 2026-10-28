@@ -27,35 +27,14 @@
   </section>
 
   <div id="app" hidden>
-    <section class="panel" id="settings">
-      <h2>設定</h2>
-      <div class="grid">
-        <label>下單商品
-          <select id="product"><option value="TX">TX(大台)</option><option value="MTX">MTX(小台)</option><option value="TMF">TMF(微台)</option></select></label>
-        <label>比例<input id="ratio" type="number" step="0.1" min="0"></label>
-        <label>計算年份<input id="calcYear" type="number" step="1"></label>
-        <label>起始日<input id="startDate" type="date"></label>
-        <label>資料結束日<input id="endDate" type="date"></label>
-        <label>大台保證金<input id="txMargin" type="number" step="1000"></label>
-        <label>自訂資金(空白=最少資金)<input id="capital" type="number" step="10000"></label>
-        <label>創高顯示門檻(天)<input id="threshold" type="number" step="1" min="0"></label>
+    <div class="sheet" id="sheet">
+      <div class="left" id="sheetLeft"></div>
+      <div class="right">
+        <table id="matrix" class="xl matrix"></table>
+        <table id="totals" class="xl totals"></table>
+        <div class="xlchart"><div class="title">年績效比較</div><div id="chartAnnual"></div></div>
       </div>
-      <div class="grid lots">
-        <label>總口數<input id="lotTotal" type="number" min="0"></label>
-        <label>當沖<input id="lotDay" type="number" min="0"></label>
-        <label>留倉<input id="lotHold" type="number" min="0"></label>
-        <label>超額保證金<input id="lotExcess" type="number" min="0"></label>
-      </div>
-      <details>
-        <summary>策略配置權重</summary>
-        <div id="alloc" class="grid alloc"></div>
-      </details>
-    </section>
-
-    <section class="panel">
-      <h2>績效總表</h2>
-      <div id="kpi" class="kpi"></div>
-    </section>
+    </div>
 
     <section class="panel">
       <h2>資金曲線與回落</h2>
@@ -64,19 +43,21 @@
     </section>
 
     <section class="panel">
-      <h2>月 / 年損益矩陣</h2>
-      <div class="scroll"><table id="matrix" class="matrix"></table></div>
-    </section>
-
-    <section class="panel">
-      <h2>創高天數</h2>
+      <h2>創高天數明細</h2>
       <p id="highSummary" class="lead"></p>
       <div class="scroll"><table id="streaks" class="plain"></table></div>
     </section>
 
-    <section class="panel">
-      <h2>資金與保證金規劃</h2>
-      <div id="plan" class="kpi"></div>
+    <section class="panel" id="settings">
+      <h2>進階設定</h2>
+      <div class="grid">
+        <label>起始日(空白 = 資料最早日)<input id="startDate" type="date"></label>
+        <label>創高顯示門檻(天)<input id="threshold" type="number" step="1" min="0"></label>
+      </div>
+      <details open>
+        <summary>策略配置權重</summary>
+        <div id="alloc" class="grid alloc"></div>
+      </details>
     </section>
   </div>
 </main>

@@ -26,11 +26,11 @@ try {
   await win.waitForTimeout(500);
 
   const status = await win.textContent('#status');
-  const kpi = await win.textContent('#kpi');
+  const kpi = await win.textContent('#sheet');
   const checks = [
     ['載入 14 個策略', status.includes('已載入 14 個策略'), status],
     ['全部月份平均獲利 21,161', kpi.includes('21,161'), ''],
-    ['月勝率 73.8%', kpi.includes('73.8%'), ''],
+    ['月勝率 73.81%', kpi.includes('73.81%'), ''],
     ['ROA 7.72', kpi.includes('7.72'), ''],
     ['沒有 console 錯誤', errors.length === 0, errors.join(' | ')],
   ];

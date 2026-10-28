@@ -1,11 +1,9 @@
 import { computeReport, parseDate, fmtDate, DEFAULT_SETTINGS, PRODUCTS } from './core.js';
 import { loadFile } from './parse.js';
-import { lineChart } from './charts.js';
+import { lineChart, barChart } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
-const pct = (v) => (v * 100).toFixed(1) + '%';
-const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 
 let strategies = []; // [{ name, rows, allocation }]
 const KEY = 'portfolio_tool.settings.v1';
@@ -63,7 +61,62 @@ function buildAllocInputs() {
     .join('');
 }
 
-// ---------- 設定 ----------
+// ---------- 版面:仿原 Excel「總表」 ----------
+
+const o = (key) => `<td data-o="${key}"></td>`;
+const inp = (id, attrs = '') => `<input id="${id}" ${attrs}>`;
+
+function buildSheet() {
+  $('sheetLeft').innerHTML = `
+  <table class="xl t1">
+    <tr><th class="blank"></th><th>TX(大台)</th><th>MTX(小台)</th><th>TMF(微台)</th></tr>
+    <tr><th class="lbl">全部月份平均獲利:</th>${o('avgAll.TX')}${o('avgAll.MTX')}${o('avgAll.TMF')}</tr>
+    <tr><th class="lbl">近三年月平均獲利:</th>${o('avgRecent.TX')}${o('avgRecent.MTX')}${o('avgRecent.TMF')}</tr>
+    <tr><th class="lbl">最大月虧損:</th>${o('worstMonth.TX')}${o('worstMonth.MTX')}${o('worstMonth.TMF')}</tr>
+    <tr><th class="lbl">月勝率:</th>${o('winRate')}${o('winRate')}${o('winRate')}</tr>
+    <tr><th class="lbl">ROA:</th>${o('roa')}${o('roa')}${o('roa')}</tr>
+    <tr class="hl"><th class="lbl">最大平倉虧損:</th>${o('maxPositionLoss.TX')}${o('maxPositionLoss.MTX')}${o('maxPositionLoss.TMF')}</tr>
+    <tr class="hl"><th class="lbl">最大單日虧損</th>${o('worstDay.TX')}${o('worstDay.MTX')}${o('worstDay.TMF')}</tr>
+  </table>
+
+  <table class="xl t2">
+    <tr><th colspan="2">每日浮動區間</th><th>95%單日風險值</th><th>最大單日虧損</th><th>日累計MAXDD:</th></tr>
+    <tr>${o('bandAll0')}${o('bandAll1')}${o('var95')}${o('worstDayProd')}${o('ddProd')}</tr>
+    <tr><th colspan="2">近三年每日浮動區間</th><th class="l">最大連虧月份</th>${o('maxLossMonthStreak')}<th>最大平倉虧(概)</th></tr>
+    <tr>${o('bandRecent0')}${o('bandRecent1')}<th class="l">年度最多虧損月份</th>${o('maxLossMonthsInYear')}${o('ddApprox')}</tr>
+    <tr><th class="lbl">計算年份</th><td class="in">${inp('calcYear', 'type="number" step="1"')}</td><td></td><td></td><th>最大策略虧(概)</th></tr>
+    <tr><td></td><td></td><td></td><td></td>${o('strategyLoss')}</tr>
+  </table>
+
+  <table class="xl t3">
+    <tr><th class="lbl">下單商品</th><td></td><td></td><td></td></tr>
+    <tr><td class="in prod"><select id="product"><option value="TX">TX</option><option value="MTX">MTX</option><option value="TMF">TMF</option></select></td><th>大台保證金</th><td class="in">${inp('txMargin', 'type="number" step="1000"')}</td><td></td></tr>
+    <tr><th class="lbl">比例</th><td class="in2">${inp('ratio', 'type="number" step="10" min="0"')}<span class="u">%</span></td><th>保證金</th>${o('marginPerLot')}</tr>
+    <tr><td></td><th>總口數</th><th>當沖</th><th>留倉</th><th>超額保證金</th></tr>
+    <tr><th class="lbl">原始口數</th><td class="in">${inp('lotTotal', 'type="number" min="0"')}</td><td class="in">${inp('lotDay', 'type="number" min="0"')}</td><td class="in">${inp('lotHold', 'type="number" min="0"')}</td><td class="in">${inp('lotExcess', 'type="number" min="0"')}</td></tr>
+    <tr class="peach"><th class="lbl">比例後口數</th>${o('lots.total')}${o('lots.dayTrade')}${o('lots.hold')}${o('lots.excess')}</tr>
+  </table>
+
+  <table class="xl t4">
+    <tr><th class="lbl">動用保證金：</th>${o('margin')}<th>預期年報酬</th>${o('expectedAnnual')}</tr>
+    <tr><th class="lbl">期貨保證金：</th>${o('futuresMargin')}<th>預期報酬率</th>${o('expectedReturn')}</tr>
+    <tr><th class="lbl">最少資金準備：</th>${o('minCapital')}<th>預期風險</th>${o('expectedRisk')}</tr>
+    <tr><th class="lbl">兩套資金準備：</th>${o('twoSetCapital')}<th>保證金檢核:</th>${o('marginCheck')}</tr>
+    <tr><th class="lbl gold">自訂資金：</th><td class="in">${inp('capital', 'type="number" step="10000"')}</td><td></td><td></td></tr>
+  </table>
+
+  <table class="xl t5">
+    <tr><th class="gold">資料結束日期</th><td class="in">${inp('endDate', 'type="date"')}</td><th class="gold">最新創高日</th>${o('latestHigh')}</tr>
+    <tr><th class="gold">DD 40 Day Avg</th>${o('avgStreak')}<th class="gold">距離上次創高</th>${o('sinceHigh')}</tr>
+  </table>
+
+  <table class="xl t6">
+    <tr><td></td><th class="gold">DD日</th><th class="gold">起始日</th><th class="gold">創高日</th></tr>
+    <tr><th class="lbl">最久DD日</th>${o('top0.days')}${o('top0.start')}${o('top0.end')}</tr>
+    <tr><th class="lbl">第二久DD日</th>${o('top1.days')}${o('top1.start')}${o('top1.end')}</tr>
+    <tr><th class="lbl">第三久DD日</th>${o('top2.days')}${o('top2.start')}${o('top2.end')}</tr>
+  </table>`;
+}
 
 const num = (id) => {
   const v = $(id).value;
@@ -71,9 +124,10 @@ const num = (id) => {
 };
 
 function readSettings() {
+  const ratioPct = num('ratio');
   return {
     product: $('product').value,
-    ratio: num('ratio') ?? 1,
+    ratio: ratioPct == null ? 1 : ratioPct / 100,
     calcYear: num('calcYear'),
     endDate: $('endDate').value ? parseDate($('endDate').value) : null,
     txMargin: num('txMargin') ?? DEFAULT_SETTINGS.txMargin,
@@ -85,7 +139,7 @@ function readSettings() {
 
 function writeSettings(s) {
   $('product').value = s.product;
-  $('ratio').value = s.ratio;
+  $('ratio').value = Math.round(s.ratio * 10000) / 100;
   $('calcYear').value = s.calcYear ?? '';
   $('txMargin').value = s.txMargin;
   $('capital').value = s.capital ?? '';
@@ -98,9 +152,17 @@ function writeSettings(s) {
 
 // ---------- 繪製 ----------
 
-const card = (k, v, sub = '', c = '') =>
-  `<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
-const trio = (o) => `TX ${nf.format(o.TX)} · MTX ${nf.format(o.MTX)} · TMF ${nf.format(o.TMF)}`;
+const fmt = (v) => (v < 0 ? `(${nf.format(-v)})` : nf.format(v));
+const pct2 = (v) => (v * 100).toFixed(2) + '%';
+const pct0 = (v) => Math.round(v * 100) + '%';
+
+function setO(key, text, cls = '') {
+  for (const el of document.querySelectorAll(`[data-o="${key}"]`)) {
+    el.textContent = text;
+    el.className = cls;
+  }
+}
+const money = (key, v) => setO(key, fmt(v), v < 0 ? 'neg' : '');
 
 function render() {
   if (!strategies.length) return;
@@ -115,22 +177,52 @@ function render() {
   const p = r.settings.product;
   const k = r.kpi;
 
-  $('kpi').innerHTML = [
-    card('全部月份平均獲利', nf.format(k.avgAll[p]), trio(k.avgAll)),
-    card('近三年月平均獲利', nf.format(k.avgRecent[p]), trio(k.avgRecent)),
-    card('最大月虧損', nf.format(k.worstMonth[p]), trio(k.worstMonth), 'neg'),
-    card('月勝率', pct(k.winRate)),
-    card('ROA', k.roa.toFixed(2), '總獲利 ÷ 最大平倉虧損'),
-    card('最大平倉虧損', nf.format(k.maxPositionLoss[p]), trio(k.maxPositionLoss), 'neg'),
-    card('最大單日虧損', nf.format(k.worstDay[p]), trio(k.worstDay), 'neg'),
-    card('總獲利', nf.format(k.totalProfit), p, cls(k.totalProfit)),
-    card('每日浮動區間(全區間)', `${nf.format(r.band.all[0])} ~ ${nf.format(r.band.all[1])}`, '平均 ± 1 個標準差'),
-    card(`每日浮動區間(近三年)`, `${nf.format(r.band.recent[0])} ~ ${nf.format(r.band.recent[1])}`, `${r.calcYear} 年底往前 1096 天`),
-    card('95% 單日風險值', nf.format(r.var95), '浮動區間均值 × 1.97', 'neg'),
-    card('最大連虧月份', `${r.maxLossMonthStreak} 個月`, `單一年度最多虧損 ${r.maxLossMonthsInYear} 個月`),
-  ].join('');
+  for (const key of ['avgAll', 'avgRecent', 'worstMonth', 'maxPositionLoss', 'worstDay']) {
+    for (const t of ['TX', 'MTX', 'TMF']) money(`${key}.${t}`, k[key][t]);
+  }
+  setO('winRate', pct2(k.winRate));
+  setO('roa', k.roa.toFixed(2));
+  money('bandAll0', r.band.all[0]); money('bandAll1', r.band.all[1]);
+  money('bandRecent0', r.band.recent[0]); money('bandRecent1', r.band.recent[1]);
+  money('var95', r.var95); money('worstDayProd', r.worstDayProd); money('ddProd', r.ddProd);
+  money('ddApprox', r.ddApprox); money('strategyLoss', r.strategyLoss);
+  setO('maxLossMonthStreak', String(r.maxLossMonthStreak), 'neg');
+  setO('maxLossMonthsInYear', String(r.maxLossMonthsInYear), 'neg');
 
-  // 圖表
+  const pl = r.plan;
+  setO('marginPerLot', nf.format(pl.marginPerLot));
+  for (const [key, v] of Object.entries(pl.lots)) setO(`lots.${key}`, String(v));
+  money('margin', pl.margin); money('futuresMargin', pl.futuresMargin);
+  money('minCapital', pl.minCapital); money('twoSetCapital', pl.twoSetCapital);
+  money('expectedAnnual', pl.expectedAnnual);
+  setO('expectedReturn', pct0(pl.expectedReturn));
+  setO('expectedRisk', pct0(pl.expectedRisk), pl.expectedRisk < 0 ? 'neg' : '');
+  setO('marginCheck', pl.marginCheck, pl.marginCheck === 'YES' ? '' : 'neg');
+
+  const h = r.highs;
+  const recent5 = h.longByRecency.slice(0, 5).map((g) => g.days);
+  setO('latestHigh', h.latestHigh == null ? '' : fmtDate(h.latestHigh));
+  setO('avgStreak', recent5.length ? (recent5.reduce((a, b) => a + b, 0) / recent5.length).toFixed(0) : '0');
+  setO('sinceHigh', String(h.latestHighDays));
+  for (let i = 0; i < 3; i++) {
+    const g = h.longByLength[i];
+    setO(`top${i}.days`, g ? String(g.days) : '');
+    setO(`top${i}.start`, g ? fmtDate(g.start) : '');
+    setO(`top${i}.end`, g ? fmtDate(g.end) : '');
+  }
+
+  // 月/年矩陣(右側)
+  const cell = (v) => `<td class="${v < 0 ? 'neg' : ''}">${fmt(v)}</td>`;
+  $('matrix').innerHTML =
+    `<tr><th class="blank"></th>${r.years.map((y, i) => `<th class="yr${i === 0 ? ' yel' : ''}">${y}</th>`).join('')}</tr>` +
+    r.matrix.map((row, m) => `<tr><th class="lbl">${m + 1}月</th>${row.map(cell).join('')}</tr>`).join('') +
+    `<tr class="sum"><th class="lbl">年報酬</th>${r.annualRet.map(cell).join('')}</tr>` +
+    `<tr><th class="lbl">年DD</th>${r.annualDD.map(cell).join('')}</tr>`;
+  $('totals').innerHTML =
+    `<tr><th>總獲利:</th><td class="big">${fmt(k.totalProfit)}</td><th class="gold">最大策略虧損:</th><td class="big neg">${fmt(r.strategyLoss)}</td></tr>`;
+  barChart($('chartAnnual'), r.years, r.annualRet, r.annualDD);
+
+  // 資金曲線
   const cum = new Float64Array(r.daily.length);
   const dd = new Float64Array(r.daily.length);
   const scale = r.settings.ratio * PRODUCTS[p].factor;
@@ -139,50 +231,23 @@ function render() {
   lineChart($('chartEquity'), r.dates, cum, { height: 280 });
   lineChart($('chartDD'), r.dates, dd, { height: 160, color: '#c0392b', area: true });
 
-  // 矩陣
-  const flat = r.matrix.flat().filter((v) => v !== 0);
-  const big = Math.max(...flat.map(Math.abs)) || 1;
-  const heat = (v) => (v === 0 ? '' : `style="background:rgba(var(${v > 0 ? '--pos-bg' : '--neg-bg'}),${(0.08 + 0.4 * Math.min(1, Math.abs(v) / big)).toFixed(2)})"`);
-  const cell = (v) => `<td ${heat(v)}>${v === 0 ? '' : nf.format(v)}</td>`;
-  $('matrix').innerHTML =
-    `<tr><th></th>${r.years.map((y) => `<th>${y}</th>`).join('')}</tr>` +
-    r.matrix.map((row, m) => `<tr><th>${m + 1} 月</th>${row.map(cell).join('')}</tr>`).join('') +
-    `<tr class="sum"><th>年報酬</th>${r.annualRet.map((v) => `<td class="${cls(v)}">${nf.format(v)}</td>`).join('')}</tr>` +
-    `<tr><th>年 DD</th>${r.annualDD.map((v) => `<td class="${cls(v)}">${nf.format(v)}</td>`).join('')}</tr>` +
-    `<tr><th>虧損月數</th>${r.lossMonthsByYear.map((v) => `<td>${v}</td>`).join('')}</tr>`;
-
-  // 創高
-  const h = r.highs;
+  // 創高明細
   $('highSummary').textContent = h.latestHigh == null
     ? '資料期間內沒有未創高的區間。'
-    : `最新創高日:${fmtDate(h.latestHigh)}(至 ${fmtDate(h.endDate)} 已 ${Math.round((h.endDate - h.latestHigh) / 86400000)} 天未創高)。以下列出未創高超過 ${r.settings.streakThreshold} 天的區間。`;
+    : `最新創高日:${fmtDate(h.latestHigh)}(至 ${fmtDate(h.endDate)} 已 ${h.latestHighDays} 天未創高)。以下列出未創高超過 ${r.settings.streakThreshold} 天的區間,由近到遠。`;
   const rows = h.longByRecency;
   $('streaks').innerHTML = rows.length
     ? `<tr><th>#</th><th>起始日</th><th>創高日(結束)</th><th>未創高天數</th></tr>` +
       rows.map((g, i) => `<tr><td>${i + 1}</td><td>${fmtDate(g.start)}</td><td>${fmtDate(g.end)}</td><td>${g.days}</td></tr>`).join('')
     : '<tr><td>沒有符合門檻的區間</td></tr>';
-
-  // 資金規劃
-  const pl = r.plan;
-  $('plan').innerHTML = [
-    card('每口保證金', nf.format(pl.marginPerLot), p),
-    card('比例後口數', `${pl.lots.total} 口`, `當沖 ${pl.lots.dayTrade} · 留倉 ${pl.lots.hold} · 超額 ${pl.lots.excess}`),
-    card('動用保證金', nf.format(pl.margin)),
-    card('期貨保證金(×1.3)', nf.format(pl.futuresMargin)),
-    card('最少資金準備', nf.format(pl.minCapital), `最大策略虧(概) ${nf.format(r.strategyLoss)}`),
-    card('兩套資金準備', nf.format(pl.twoSetCapital)),
-    card('預期年報酬', nf.format(pl.expectedAnnual), '月平均(全部/近三年取小)× 12', cls(pl.expectedAnnual)),
-    card('預期報酬率', pct(pl.expectedReturn), '', cls(pl.expectedReturn)),
-    card('預期風險', pct(pl.expectedRisk), '最大策略虧 ÷ 資金', 'neg'),
-    card('保證金檢核', pl.marginCheck === 'YES' ? 'YES' : '不足', pl.marginCheck === 'YES' ? '' : pl.marginCheck, pl.marginCheck === 'YES' ? 'pos' : 'neg'),
-  ].join('');
 }
 
 // ---------- 事件 ----------
 
+buildSheet();
 writeSettings({ ...DEFAULT_SETTINGS, ...loadSettings(), lots: { ...DEFAULT_SETTINGS.lots, ...(loadSettings().lots || {}) } });
 
-$('settings').addEventListener('input', (e) => {
+$('app').addEventListener('input', (e) => {
   if (e.target.dataset.i != null) strategies[+e.target.dataset.i].allocation = Number(e.target.value) || 0;
   render();
 });

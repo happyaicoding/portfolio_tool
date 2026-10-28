@@ -64,3 +64,35 @@ export function lineChart(el, dates, series, { height = 300, color = '#b7791f', 
   });
   svg.querySelector('.hit').addEventListener('pointerleave', () => { tip.hidden = true; });
 }
+
+/** 年績效比較:每年一組,綠柱 = 年報酬,紅柱 = 年 DD(同 Excel 圖表) */
+export function barChart(el, years, ret, dd, { height = 260 } = {}) {
+  const padL = 56, padR = 8, padT = 14, padB = 22;
+  const all = [...ret, ...dd, 0];
+  let min = Math.min(...all);
+  let max = Math.max(...all);
+  const pad = (max - min) * 0.08 || 1;
+  min -= pad; max += pad;
+  const n = years.length;
+  const slot = (W - padL - padR) / n;
+  const bw = Math.min(26, slot * 0.32);
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * (height - padT - padB);
+  const ticks = niceTicks(min, max, 6);
+  const label = (v) => nf.format(Math.abs(v)) ;
+  const bars = years.map((yr, i) => {
+    const cx = padL + slot * (i + 0.5);
+    const mk = (v, x, color) => {
+      if (!v) return `<text class="axis" x="${x + bw / 2}" y="${y(0) - 3}" text-anchor="middle" font-size="9">0</text>`;
+      const top = Math.min(y(v), y(0));
+      const h = Math.abs(y(v) - y(0));
+      const ty = v > 0 ? top - 3 : top + h + 10;
+      return `<rect x="${x}" y="${top}" width="${bw}" height="${h}" fill="${color}"/><text class="axis" x="${x + bw / 2}" y="${ty}" text-anchor="middle" font-size="9">${v < 0 ? `(${label(v)})` : label(v)}</text>`;
+    };
+    return mk(ret[i], cx - bw - 1, '#00b050') + mk(dd[i], cx + 1, '#ff0000') +
+      `<text class="axis" x="${cx}" y="${height - 6}" text-anchor="middle">${yr}</text>`;
+  }).join('');
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${height}" role="img">
+    ${ticks.map((t) => `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="#d9d9d9"/><text class="axis" x="${padL - 6}" y="${y(t) + 4}" text-anchor="end">${t < 0 ? `(${nf.format(-t)})` : nf.format(t)}</text>`).join('')}
+    ${bars}
+  </svg>`;
+}
