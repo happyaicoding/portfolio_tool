@@ -20,7 +20,7 @@
 ## Windows 免安裝版(portable)
 - `.github/workflows/desktop-windows.yml` 在 `windows-latest` 上:跑 `npm test` → `npm run dist:win` 打包 → 啟動打包後的 exe、上傳原 `.xlsm`、檢查畫面數字並截圖。
 - 產物在該次 Actions 執行頁的 Artifacts:`PortfolioTool-portable`(單一 `.exe`,雙擊即用)與 `desktop-screenshot`。
-- 推 `v*` tag(例如 `v0.1.0`)時,會把 `.exe` 附到 GitHub Release。
+- 推 `v*` tag(例如 `v0.1.2`)時,會自動把版號設成 tag 的版號,並把 `PortfolioTool-<版號>-portable.exe` 附到 GitHub Release。
 - 尚未簽章,Windows SmartScreen 第一次執行會警告(更多資訊 → 仍要執行)。
 
 ## 桌面版:自動讀取資料夾內所有 CSV
