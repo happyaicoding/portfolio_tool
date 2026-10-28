@@ -1,10 +1,13 @@
 // 直接讀原始 .xlsm 的「文字檔」工作表,走完整流程(解析 → 計算),與 Excel 快取值比對。
 import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { loadFile } from '../web/src/parse.js';
 import { computeReport, parseDate, fmtDate } from '../web/src/core.js';
 
-const name = readdirSync(new URL('..', import.meta.url).pathname).find((f) => f.endsWith('.xlsm'));
-const buf = readFileSync(new URL('../' + name, import.meta.url));
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const name = readdirSync(root).find((f) => f.endsWith('.xlsm'));
+const buf = readFileSync(path.join(root, name));
 const file = { name, arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
 const strategies = await loadFile(file);
 console.log('策略數', strategies.length, strategies.map((s) => `${s.name}:${s.rows.length}`).join(' '));
@@ -17,6 +20,7 @@ for (const [k, v] of Object.entries(want)) {
   const got = r.kpi[k].TX; const ok = Math.abs(got - v) < 1e-6 * Math.abs(v);
   if (!ok) fail++; console.log(ok ? '✓' : '✗', k, got, v);
 }
-console.log('totalProfit', r.kpi.totalProfit, '(Excel 1777558.277)');
-console.log('latestHigh', fmtDate(r.highs.latestHigh), '(Excel 2026-06-24)');
+const check = (label, ok, detail) => { if (!ok) fail++; console.log(ok ? '✓' : '✗', label, detail); };
+check('totalProfit', Math.abs(r.kpi.totalProfit - 1777558.277) < 0.01, r.kpi.totalProfit);
+check('latestHigh', fmtDate(r.highs.latestHigh) === '2026-06-24', fmtDate(r.highs.latestHigh));
 process.exit(fail ? 1 : 0);

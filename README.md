@@ -16,3 +16,15 @@
 ## 與 Excel 的已知差異
 - Excel 的日序列延伸到「更新當天」,多出的未來日損益為 0,會讓每日浮動區間的平均與標準差略有不同;本工具只到資料最後一天。
 - 「保證金檢核」沿用原公式(所需保證金 < 最少資金準備 才顯示 YES),邏輯看起來可能與直覺相反,請自行確認。
+
+## Windows 免安裝版(portable)
+- `.github/workflows/desktop-windows.yml` 在 `windows-latest` 上:跑 `npm test` → `npm run dist:win` 打包 → 啟動打包後的 exe、上傳原 `.xlsm`、檢查畫面數字並截圖。
+- 產物在該次 Actions 執行頁的 Artifacts:`PortfolioTool-portable`(單一 `.exe`,雙擊即用)與 `desktop-screenshot`。
+- 推 `v*` tag(例如 `v0.1.0`)時,會把 `.exe` 附到 GitHub Release。
+- 尚未簽章,Windows SmartScreen 第一次執行會警告(更多資訊 → 仍要執行)。
+
+## 桌面版:自動讀取資料夾內所有 CSV
+- 開啟程式時自動讀取一個資料夾內全部的 `.csv`/`.tsv`/`.txt`(每檔一個策略,或一張寬表);資料夾內檔案有增減或修改,畫面會自動更新,已調整的策略權重與設定會保留。
+- 預設資料夾:portable `.exe` 所在的資料夾(開發時為專案的 `data/`)。可按「選擇資料夾」改成別處,下次啟動會記住。
+- CSV 編碼自動判斷(UTF-8,不合法時改用 Big5);分隔符號支援逗號、Tab、分號。
+- 網站版受瀏覽器限制,無法自動讀資料夾,仍需手動選檔或拖曳。

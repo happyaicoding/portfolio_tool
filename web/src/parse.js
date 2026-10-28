@@ -8,7 +8,9 @@ const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
 
 export function parseCsvText(text) {
   text = text.replace(/^﻿/, '');
-  const delim = (text.split('\n', 1)[0].match(/\t/g) || []).length ? '\t' : ',';
+  const first = text.split('\n', 1)[0];
+  const count = (ch) => first.split(ch).length - 1;
+  const delim = [',', '\t', ';'].reduce((best, ch) => (count(ch) > count(best) ? ch : best), ',');
   const rows = [];
   let row = [];
   let cell = '';
@@ -229,12 +231,23 @@ export function tableToStrategies(rows, fallbackName = '策略') {
       const v = rows[i][c];
       if (isDate(d) && isNum(v)) r.push([d.date, v]);
     }
-    if (r.length) out.push({ name: header(c) || (width <= 2 ? fallbackName : `${fallbackName}${c}`), rows: r });
+    if (r.length) out.push({ name: header(c) || `${fallbackName}${c}`, rows: r });
   }
+  // 兩欄檔(單一策略)一律以檔名當策略名稱,避免多個檔案的標題都叫 pnl / 損益 而重名
+  if (out.length === 1) out[0].name = fallbackName;
   return out;
 }
 
 /** 讀取使用者選擇的檔案,回傳 [{ name, rows }]。 */
+// 先用 UTF-8 解讀;不合法就改用 Big5(台灣 Windows 的 Excel 另存 CSV 預設編碼)
+export function decodeText(buf) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('big5').decode(buf);
+  }
+}
+
 export async function loadFile(file) {
   const base = file.name.replace(/\.[^.]+$/, '');
   if (/\.(xlsx|xlsm)$/i.test(file.name)) {
@@ -246,5 +259,5 @@ export async function loadFile(file) {
     if (start != null) out.startDate = start;
     return out;
   }
-  return tableToStrategies(parseCsvText(await file.text()), base);
+  return tableToStrategies(parseCsvText(decodeText(await file.arrayBuffer())), base);
 }
