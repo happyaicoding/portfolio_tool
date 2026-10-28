@@ -33,6 +33,7 @@ try {
     ['月勝率 73.81%', kpi.includes('73.81%'), ''],
     ['ROA 7.72', kpi.includes('7.72'), ''],
     ['沒有 console 錯誤', errors.length === 0, errors.join(' | ')],
+    ['設定分頁:14 個策略權重欄位', (await (async () => { await win.click('.tabs button[data-tab=settings]'); return win.locator('#alloc input').count(); })()) === 14, ''],
   ];
   for (const [label, ok, detail] of checks) {
     if (!ok) fail++;

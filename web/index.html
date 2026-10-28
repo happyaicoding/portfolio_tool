@@ -27,6 +27,13 @@
   </section>
 
   <div id="app" hidden>
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="summary" class="on">總表</button>
+      <button type="button" role="tab" data-tab="settings">設定</button>
+    </nav>
+
+    <div id="tab-summary">
+    <p id="weightWarn" class="status err" hidden>所有策略的權重都是 0,沒有資料可計算。請到「設定」分頁調整權重。</p>
     <div class="sheet" id="sheet">
       <div class="left" id="sheetLeft"></div>
       <div class="right">
@@ -48,17 +55,27 @@
       <div class="scroll"><table id="streaks" class="plain"></table></div>
     </section>
 
-    <section class="panel" id="settings">
-      <h2>進階設定</h2>
-      <div class="grid">
-        <label>起始日(空白 = 資料最早日)<input id="startDate" type="date"></label>
-        <label>創高顯示門檻(天)<input id="threshold" type="number" step="1" min="0"></label>
-      </div>
-      <details open>
-        <summary>策略配置權重</summary>
-        <div id="alloc" class="grid alloc"></div>
-      </details>
-    </section>
+    </div>
+
+    <div id="tab-settings" hidden>
+      <section class="panel" id="settings">
+        <h2>策略權重</h2>
+        <p class="lead">每個策略的損益會乘上權重再加總成組合損益(對應原報表「策略報表」的 allocation 列)。權重 0 = 不納入;1 = 原始口數。</p>
+        <div class="actions">
+          <button type="button" id="weightsOne">全部設為 1</button>
+          <button type="button" id="weightsZero">全部設為 0</button>
+        </div>
+        <div class="scroll"><table id="alloc" class="plain weights"></table></div>
+      </section>
+
+      <section class="panel">
+        <h2>計算設定</h2>
+        <div class="grid">
+          <label>起始日(空白 = 資料最早日)<input id="startDate" type="date"></label>
+          <label>創高顯示門檻(天)<input id="threshold" type="number" step="1" min="0"></label>
+        </div>
+      </section>
+    </div>
   </div>
 </main>
 <footer>公式移植自原 Excel 報表,以 <code>tests/</code> 內的測試對照原檔數值。僅供研究參考,不構成投資建議。</footer>

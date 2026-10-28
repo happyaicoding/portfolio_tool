@@ -32,11 +32,12 @@ async function ingest(files, { reload = false } = {}) {
     }
     const seen = new Map();
     const oldAlloc = new Map(strategies.map((s) => [s.name, s.allocation]));
+    const saved = loadWeights();
     strategies = loaded.map((s) => {
       const c = (seen.get(s.name) || 0) + 1;
       seen.set(s.name, c);
       const name = c > 1 ? `${s.name}(${c})` : s.name;
-      return { ...s, name, allocation: oldAlloc.get(name) ?? 1 }; // 重新載入時保留已調整的權重
+      return { ...s, name, allocation: oldAlloc.get(name) ?? saved[name] ?? 1 }; // 保留已調整的權重(含上次關閉前存下的)
     });
     const all = strategies.flatMap((s) => s.rows.map((r) => r[0]));
     const min = Math.min(...all), max = Math.max(...all);
@@ -55,10 +56,32 @@ async function ingest(files, { reload = false } = {}) {
   }
 }
 
+const WKEY = 'portfolio_tool.weights.v1';
+function loadWeights() {
+  try { return JSON.parse(localStorage.getItem(WKEY)) || {}; } catch { return {}; }
+}
+function saveWeights() {
+  try { localStorage.setItem(WKEY, JSON.stringify(Object.fromEntries(strategies.map((s) => [s.name, s.allocation])))); } catch { /* 略過 */ }
+}
+
 function buildAllocInputs() {
-  $('alloc').innerHTML = strategies
-    .map((s, i) => `<label>${s.name}<input type="number" step="0.1" min="0" data-i="${i}" value="${s.allocation}"></label>`)
-    .join('');
+  const rows = strategies.map((s, i) => {
+    const dates = s.rows.map((r) => r[0]);
+    const total = s.rows.reduce((a, r) => a + r[1], 0);
+    return `<tr><th>${s.name}</th>
+      <td><input type="number" step="0.1" min="0" data-i="${i}" value="${s.allocation}" aria-label="${s.name} 權重"></td>
+      <td>${fmtDate(Math.min(...dates))} ~ ${fmtDate(Math.max(...dates))}</td>
+      <td>${s.rows.length}</td>
+      <td class="${total < 0 ? 'neg' : ''}">${nf.format(total)}</td></tr>`;
+  });
+  $('alloc').innerHTML = `<tr><th>策略</th><th>權重</th><th>資料期間</th><th>筆數</th><th>累計損益(未加權)</th></tr>${rows.join('')}`;
+}
+
+function setAllWeights(v) {
+  strategies.forEach((s) => { s.allocation = v; });
+  buildAllocInputs();
+  saveWeights();
+  render();
 }
 
 // ---------- 版面:仿原 Excel「總表」 ----------
@@ -166,6 +189,10 @@ const money = (key, v) => setO(key, fmt(v), v < 0 ? 'neg' : '');
 
 function render() {
   if (!strategies.length) return;
+  const empty = strategies.every((s) => !s.allocation);
+  $('weightWarn').hidden = !empty;
+  $('sheet').hidden = empty;
+  if (empty) return;
   const s = readSettings();
   saveSettings({ ...s, endDate: null });
   const seriesOpts = {};
@@ -248,9 +275,22 @@ buildSheet();
 writeSettings({ ...DEFAULT_SETTINGS, ...loadSettings(), lots: { ...DEFAULT_SETTINGS.lots, ...(loadSettings().lots || {}) } });
 
 $('app').addEventListener('input', (e) => {
-  if (e.target.dataset.i != null) strategies[+e.target.dataset.i].allocation = Number(e.target.value) || 0;
+  if (e.target.dataset.i != null) {
+    strategies[+e.target.dataset.i].allocation = Math.max(0, Number(e.target.value) || 0);
+    saveWeights();
+  }
   render();
 });
+$('weightsOne').addEventListener('click', () => setAllWeights(1));
+$('weightsZero').addEventListener('click', () => setAllWeights(0));
+for (const btn of document.querySelectorAll('.tabs button')) {
+  btn.addEventListener('click', () => {
+    for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b === btn);
+    $('tab-summary').hidden = btn.dataset.tab !== 'summary';
+    $('tab-settings').hidden = btn.dataset.tab !== 'settings';
+    if (btn.dataset.tab === 'summary') render();
+  });
+}
 $('pick').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', (e) => e.target.files.length && ingest([...e.target.files]));
 const drop = $('drop');
