@@ -23,4 +23,9 @@ for (const [k, v] of Object.entries(want)) {
 const check = (label, ok, detail) => { if (!ok) fail++; console.log(ok ? '✓' : '✗', label, detail); };
 check('totalProfit', Math.abs(r.kpi.totalProfit - 1777558.277) < 0.01, r.kpi.totalProfit);
 check('latestHigh', fmtDate(r.highs.latestHigh) === '2026-06-24', fmtDate(r.highs.latestHigh));
+// 回歸:近三年月平均與「計算年份」無關(原表固定取最後三年),預期年報酬 = min(全部, 近三年) × 12
+const r25 = computeReport(strategies, { product: 'TMF', calcYear: 2025, endDate: parseDate('2026-06-30'), capital: 1000000 },
+  { startDate: parseDate('2019-10-01'), lastDate: parseDate('2026-10-11') });
+check('計算年份 2025 時近三年月平均不變', Math.abs(r25.kpi.avgRecent.TX - 690906.97) < 0.01, r25.kpi.avgRecent.TX);
+check('預期年報酬 = 全部月平均 × 12', Math.abs(r25.plan.expectedAnnual - 253936.8967) < 0.01, r25.plan.expectedAnnual);
 process.exit(fail ? 1 : 0);
