@@ -13,7 +13,7 @@ export const PRODUCTS = {
 export const DEFAULT_SETTINGS = {
   product: 'TMF',
   ratio: 1, // 總表 B19 比例
-  calcYear: null, // 總表 B14 計算年份(近三年與「最後年份指標」)
+  calcYear: null, // 總表 B14 計算年份(只影響「近三年每日浮動區間」與每日浮動區間的截止年底)
   endDate: null, // 總表 B30 資料結束日期(創高天數計算用),null = 資料最後一天
   txMargin: 636000, // 總表 C18 大台保證金
   lots: { total: 10, dayTrade: 4, hold: 6, excess: 4 }, // 總表 B21:E21
@@ -243,8 +243,8 @@ export function computeReport(strategies, userSettings = {}, seriesOpts = {}) {
   const flat = m.flat();
   const nonZero = flat.filter((v) => v !== 0);
   const recent = (() => {
-    // 近三年 = 計算年份與前兩年(原表 M:O,即 2024~2026)
-    const cols = years.map((y, c) => (y >= calcYear - 2 && y <= calcYear ? c : -1)).filter((c) => c >= 0);
+    // 近三年 = 資料最後三個年度(原表固定取 M:O 三欄,與「計算年份」無關)
+    const cols = years.map((_, c) => c).slice(-3);
     return m.flatMap((row) => cols.map((c) => row[c])).filter((v) => v !== 0);
   })();
   const sum = (a) => a.reduce((x, y) => x + y, 0);
