@@ -113,7 +113,7 @@ function buildSheet() {
 
   <table class="xl t3">
     <tr><th class="lbl">下單商品</th><td></td><td></td><td></td></tr>
-    <tr><td class="in prod"><select id="product"><option value="TX">TX</option><option value="MTX">MTX</option><option value="TMF">TMF</option></select></td><th>大台保證金</th><td class="in">${inp('txMargin', 'type="number" step="1000"')}</td><td></td></tr>
+    <tr><td class="in prod"><select id="product"><option value="TX">TX</option><option value="MTX">MTX</option><option value="TMF">TMF</option></select></td><th>大台保證金</th><td class="in">${inp('txMargin', 'type="text" inputmode="numeric" autocomplete="off"')}</td><td></td></tr>
     <tr><th class="lbl">比例</th><td class="in2">${inp('ratio', 'type="number" step="10" min="0"')}<span class="u">%</span></td><th>保證金</th>${o('marginPerLot')}</tr>
     <tr><td></td><th>總口數</th><th>當沖</th><th>留倉</th><th>超額保證金</th></tr>
     <tr><th class="lbl">原始口數</th><td class="in">${inp('lotTotal', 'type="number" min="0"')}</td><td class="in">${inp('lotDay', 'type="number" min="0"')}</td><td class="in">${inp('lotHold', 'type="number" min="0"')}</td><td class="in">${inp('lotExcess', 'type="number" min="0"')}</td></tr>
@@ -125,7 +125,7 @@ function buildSheet() {
     <tr><th class="lbl">期貨保證金：</th>${o('futuresMargin')}<th>預期報酬率</th>${o('expectedReturn')}</tr>
     <tr><th class="lbl">最少資金準備：</th>${o('minCapital')}<th>預期風險</th>${o('expectedRisk')}</tr>
     <tr><th class="lbl">兩套資金準備：</th>${o('twoSetCapital')}<th>保證金檢核:</th>${o('marginCheck')}</tr>
-    <tr><th class="lbl gold">自訂資金：</th><td class="in">${inp('capital', 'type="number" step="10000"')}</td><td></td><td></td></tr>
+    <tr><th class="lbl gold">自訂資金：</th><td class="in">${inp('capital', 'type="text" inputmode="numeric" autocomplete="off"')}</td><td></td><td></td></tr>
   </table>
 
   <table class="xl t5">
@@ -142,8 +142,16 @@ function buildSheet() {
 }
 
 const num = (id) => {
-  const v = $(id).value;
-  return v === '' ? null : Number(v);
+  const v = $(id).value.replace(/[,\s]/g, '');
+  if (v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+// 金額欄位顯示千分位(同 Excel);輸入中維持原樣,離開欄位時才格式化
+const fmtMoneyInput = (id) => {
+  const n = num(id);
+  $(id).value = n == null ? '' : nf.format(n);
 };
 
 function readSettings() {
@@ -164,8 +172,8 @@ function writeSettings(s) {
   $('product').value = s.product;
   $('ratio').value = Math.round(s.ratio * 10000) / 100;
   $('calcYear').value = s.calcYear ?? '';
-  $('txMargin').value = s.txMargin;
-  $('capital').value = s.capital ?? '';
+  $('txMargin').value = nf.format(s.txMargin);
+  $('capital').value = s.capital == null ? '' : nf.format(s.capital);
   $('threshold').value = s.streakThreshold;
   $('lotTotal').value = s.lots.total;
   $('lotDay').value = s.lots.dayTrade;
@@ -273,6 +281,8 @@ function render() {
 
 buildSheet();
 writeSettings({ ...DEFAULT_SETTINGS, ...loadSettings(), lots: { ...DEFAULT_SETTINGS.lots, ...(loadSettings().lots || {}) } });
+
+for (const id of ['txMargin', 'capital']) $(id).addEventListener('blur', () => fmtMoneyInput(id));
 
 $('app').addEventListener('input', (e) => {
   if (e.target.dataset.i != null) {
