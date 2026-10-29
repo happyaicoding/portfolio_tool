@@ -30,6 +30,8 @@
     <nav class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="summary" class="on">總表</button>
       <button type="button" role="tab" data-tab="settings">設定</button>
+      <button type="button" role="tab" data-tab="log">記錄</button>
+      <button type="button" id="snapBtn" class="snap" hidden>📷 截圖並記錄</button>
     </nav>
 
     <div id="tab-summary">
@@ -74,6 +76,15 @@
           <label>起始日(空白 = 資料最早日)<input id="startDate" type="date"></label>
           <label>創高顯示門檻(天)<input id="threshold" type="number" step="1" min="0"></label>
         </div>
+      </section>
+    </div>
+
+    <div id="tab-log" hidden>
+      <section class="panel">
+        <h2>記錄</h2>
+        <p id="logHint" class="lead"></p>
+        <div class="actions"><button type="button" id="openLog" hidden>在資料夾中顯示記錄檔</button></div>
+        <div class="scroll"><table id="logTable" class="plain logtable"></table></div>
       </section>
     </div>
   </div>

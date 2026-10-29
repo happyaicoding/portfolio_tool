@@ -6,6 +6,7 @@ const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 
 let strategies = []; // [{ name, rows, allocation }]
+let lastReport = null; // 最近一次 computeReport 的結果(截圖記錄用)
 const KEY = 'portfolio_tool.settings.v1';
 
 function saveSettings(s) {
@@ -23,12 +24,20 @@ async function ingest(files, { reload = false } = {}) {
   status.textContent = '讀取中…';
   try {
     const loaded = [];
+    const info = new Map(); // 檔名 → { strategies, rows, min, max }(給記錄用)
     let fileStart = null;
     for (const f of files) {
       const got = await loadFile(f);
       if (got.startDate != null) fileStart = got.startDate;
       if (!got.length) throw new Error(`「${f.name}」找不到「日期 + 損益」的資料欄`);
       loaded.push(...got);
+      const ds = got.flatMap((s) => s.rows.map((r) => r[0]));
+      info.set(f.name, {
+        strategies: got.length,
+        rows: Math.max(...got.map((s) => s.rows.length)),
+        min: Math.min(...ds),
+        max: Math.max(...ds),
+      });
     }
     const seen = new Map();
     const oldAlloc = new Map(strategies.map((s) => [s.name, s.allocation]));
@@ -50,9 +59,11 @@ async function ingest(files, { reload = false } = {}) {
     buildAllocInputs();
     $('app').hidden = false;
     render();
+    return info;
   } catch (e) {
     status.className = 'status err';
     status.textContent = e.message || String(e);
+    return null;
   }
 }
 
@@ -82,6 +93,89 @@ function setAllWeights(v) {
   buildAllocInputs();
   saveWeights();
   render();
+}
+
+
+// ---------- 記錄(檔案變動、截圖) ----------
+// 每行:  時間 | 類型 | 內容   桌面版寫進資料夾的 portfolio-tool.log;網站版只存在這個瀏覽器。
+
+const LOGKEY = 'portfolio_tool.log.v1';
+let logLines = [];
+
+const p2 = (n) => String(n).padStart(2, '0');
+const stamp = (d = new Date()) =>
+  `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+
+function renderLog() {
+  const rows = [...logLines].reverse().slice(0, 500).map((line) => {
+    const [t, type, ...rest] = line.split(' | ');
+    return `<tr><td>${t}</td><td class="t-${type}">${type ?? ''}</td><td>${rest.join(' | ')}</td></tr>`;
+  });
+  $('logTable').innerHTML = rows.length
+    ? `<tr><th>時間</th><th>類型</th><th>內容</th></tr>${rows.join('')}`
+    : '<tr><td>目前沒有記錄</td></tr>';
+}
+
+function logEvent(type, content) {
+  const line = `${stamp()} | ${type} | ${content}`;
+  logLines.push(line);
+  if (logLines.length > 1000) logLines = logLines.slice(-1000);
+  renderLog();
+  if (window.desktop) window.desktop.appendLog(line);
+  else {
+    try { localStorage.setItem(LOGKEY, JSON.stringify(logLines.slice(-500))); } catch { /* 略過 */ }
+  }
+}
+
+const fileText = (name, i) =>
+  `${name} | ${i.strategies} 個策略 · ${nf.format(i.rows)} 筆 · ${fmtDate(i.min)} ~ ${fmtDate(i.max)}`;
+
+// 比對前後兩次的檔案清單,只記錄真正的變動
+function logFileChanges(prev, cur) {
+  if (!prev) {
+    for (const [name, i] of cur) logEvent('載入', fileText(name, i));
+    return;
+  }
+  for (const [name, i] of cur) {
+    const p = prev.get(name);
+    if (!p) logEvent('新增', fileText(name, i));
+    else if (p.size !== i.size || p.mtime !== i.mtime) {
+      const d = i.rows - p.rows;
+      const delta = d === 0 ? '筆數不變' : `${nf.format(p.rows)} → ${nf.format(i.rows)} 筆(${d > 0 ? '+' : ''}${nf.format(d)})`;
+      logEvent('修改', `${name} | ${delta} · ${fmtDate(i.min)} ~ ${fmtDate(i.max)}`);
+    }
+  }
+  for (const name of prev.keys()) if (!cur.has(name)) logEvent('刪除', name);
+}
+
+function switchTab(tab) {
+  for (const b of document.querySelectorAll('.tabs button[data-tab]')) b.classList.toggle('on', b.dataset.tab === tab);
+  for (const t of ['summary', 'settings', 'log']) $(`tab-${t}`).hidden = t !== tab;
+  if (tab === 'summary') render();
+}
+
+// 截圖並記錄當下績效(僅桌面版)
+async function takeSnapshot() {
+  if (!window.desktop) return;
+  if (!lastReport) { logEvent('錯誤', '截圖失敗:目前沒有可截圖的績效(尚未載入資料,或權重全為 0)'); return; }
+  switchTab('summary');
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const b = $('sheet').getBoundingClientRect();
+  const res = await window.desktop.saveSnapshot({
+    x: b.left + window.scrollX, y: b.top + window.scrollY, width: Math.ceil(b.width), height: Math.ceil(b.height),
+  });
+  if (res.error) { logEvent('錯誤', `截圖失敗:${res.error}`); return; }
+  const r = lastReport;
+  const m = (v) => (v < 0 ? `(${nf.format(-v)})` : nf.format(v));
+  const h = r.highs;
+  logEvent('截圖', [
+    res.name,
+    `商品 ${r.settings.product} × ${Math.round(r.settings.ratio * 100)}%`,
+    `總獲利 ${m(r.kpi.totalProfit)}`,
+    `最大策略虧 ${m(r.strategyLoss)}`,
+    `預期年報酬 ${m(r.plan.expectedAnnual)}(${Math.round(r.plan.expectedReturn * 100)}%)`,
+    `最新創高日 ${h.latestHigh == null ? '-' : fmtDate(h.latestHigh)}(${h.latestHighDays} 天)`,
+  ].join(' | '));
 }
 
 // ---------- 版面:仿原 Excel「總表」 ----------
@@ -200,13 +294,14 @@ function render() {
   const empty = strategies.every((s) => !s.allocation);
   $('weightWarn').hidden = !empty;
   $('sheet').hidden = empty;
-  if (empty) return;
+  if (empty) { lastReport = null; return; }
   const s = readSettings();
   saveSettings({ ...s, endDate: null });
   const seriesOpts = {};
   if ($('startDate').value) seriesOpts.startDate = parseDate($('startDate').value);
   const r = computeReport(strategies, s, seriesOpts);
   if (!r) return;
+  lastReport = r;
   if ($('calcYear').value === '') $('calcYear').placeholder = r.calcYear;
   if (!$('endDate').value) $('endDate').placeholder = fmtDate(r.highs.endDate);
   const p = r.settings.product;
@@ -280,6 +375,11 @@ function render() {
 // ---------- 事件 ----------
 
 buildSheet();
+if (!window.desktop) {
+  try { logLines = JSON.parse(localStorage.getItem(LOGKEY)) || []; } catch { logLines = []; }
+  $('logHint').textContent = '網站版的記錄只保存在這個瀏覽器裡,不會寫成檔案;截圖功能僅桌面版提供。';
+  renderLog();
+}
 writeSettings({ ...DEFAULT_SETTINGS, ...loadSettings(), lots: { ...DEFAULT_SETTINGS.lots, ...(loadSettings().lots || {}) } });
 
 for (const id of ['txMargin', 'capital']) $(id).addEventListener('blur', () => fmtMoneyInput(id));
@@ -293,46 +393,60 @@ $('app').addEventListener('input', (e) => {
 });
 $('weightsOne').addEventListener('click', () => setAllWeights(1));
 $('weightsZero').addEventListener('click', () => setAllWeights(0));
-for (const btn of document.querySelectorAll('.tabs button')) {
-  btn.addEventListener('click', () => {
-    for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('on', b === btn);
-    $('tab-summary').hidden = btn.dataset.tab !== 'summary';
-    $('tab-settings').hidden = btn.dataset.tab !== 'settings';
-    if (btn.dataset.tab === 'summary') render();
-  });
-}
+for (const btn of document.querySelectorAll('.tabs button[data-tab]')) btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+$('snapBtn').addEventListener('click', takeSnapshot);
 $('pick').addEventListener('click', () => $('file').click());
-$('file').addEventListener('change', (e) => e.target.files.length && ingest([...e.target.files]));
+const ingestAndLog = async (files) => {
+  const info = await ingest(files);
+  if (info) logFileChanges(null, info);
+};
+$('file').addEventListener('change', (e) => e.target.files.length && ingestAndLog([...e.target.files]));
 const drop = $('drop');
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', (e) => {
   e.preventDefault();
   drop.classList.remove('over');
-  if (e.dataTransfer.files.length) ingest([...e.dataTransfer.files]);
+  if (e.dataTransfer.files.length) ingestAndLog([...e.dataTransfer.files]);
 });
 
 // ---------- 桌面版:自動讀取資料夾內所有 CSV ----------
 
 if (window.desktop) {
-  const bar = $('folderBar');
-  bar.hidden = false;
+  $('folderBar').hidden = false;
+  $('snapBtn').hidden = false;
+  $('openLog').hidden = false;
+  $('openLog').addEventListener('click', () => window.desktop.showLog());
   let first = true;
-  const showFolder = async () => { $('folderPath').textContent = await window.desktop.getFolder(); };
+  let prevFiles = null; // 檔名 → { size, mtime, rows, ... },用來比對哪些檔案變動
+  const showFolder = async () => {
+    const f = await window.desktop.getFolder();
+    $('folderPath').textContent = f;
+    $('logHint').textContent = `記錄檔:${f} 內的 portfolio-tool.log(可用記事本開啟);截圖存在 ${f} 內的 snapshots 資料夾。`;
+  };
   const loadFolder = async () => {
     const files = await window.desktop.readFolder();
     if (!files.length) {
       $('status').className = 'status err';
       $('status').textContent = '資料夾內沒有 CSV 檔(把各策略的日損益 CSV 放進去即可)';
+      if (prevFiles?.size) { logFileChanges(prevFiles, new Map()); prevFiles = new Map(); }
       return;
     }
-    await ingest(files.map((f) => new File([f.data], f.name)), { reload: !first });
+    const info = await ingest(files.map((f) => new File([f.data], f.name)), { reload: !first });
+    if (!info) return;
+    const cur = new Map(files.map((f) => [f.name, { ...info.get(f.name), size: f.size, mtime: f.mtime }]));
+    logFileChanges(prevFiles, cur);
+    prevFiles = cur;
     first = false;
   };
   $('chooseFolder').addEventListener('click', async () => {
-    if (await window.desktop.chooseFolder()) { first = true; await showFolder(); await loadFolder(); }
+    if (await window.desktop.chooseFolder()) { first = true; prevFiles = null; await showFolder(); logLines = await window.desktop.readLog(); renderLog(); await loadFolder(); }
   });
   $('reloadFolder').addEventListener('click', loadFolder);
   window.desktop.onFolderChanged(loadFolder); // 資料夾內檔案有增減或修改,自動重讀
-  showFolder().then(loadFolder);
+  showFolder().then(async () => {
+    logLines = await window.desktop.readLog(); // 先帶入以前的記錄,再接著記新的
+    renderLog();
+    await loadFolder();
+  });
 }

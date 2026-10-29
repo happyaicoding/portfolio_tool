@@ -102,3 +102,14 @@ table.xl.matrix th.yr { font-weight: 700; }
 .xl input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .xl input[type=number]::-webkit-inner-spin-button, .xl input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .xl input::placeholder { color: #111; opacity: .6; }
+
+/* 記錄分頁、截圖按鈕 */
+.tabs .snap { margin-left: auto; align-self: center; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; font-size: 14px; }
+.tabs .snap[hidden] { display: none; }
+#tab-log[hidden] { display: none; }
+table.logtable td { text-align: left; white-space: normal; word-break: break-all; }
+table.logtable td:first-child { white-space: nowrap; color: var(--muted); }
+table.logtable td.t-新增, table.logtable td.t-載入 { color: var(--pos); }
+table.logtable td.t-刪除 { color: var(--neg); }
+table.logtable td:nth-child(2) { white-space: nowrap; }
+.xl td.in { min-width: 96px; } /* 金額欄(例如 1,000,000)在窄視窗也不被截斷 */
