@@ -62,7 +62,7 @@ th { color: var(--muted); font-weight: 500; font-size: 13px; }
 table.xl { border-collapse: collapse; width: 100%; font-size: 13px; line-height: 1.25; color: #111; }
 table.xl th, table.xl td { border: 1px solid #000; padding: 2px 6px; text-align: center; font-weight: 400; white-space: nowrap; background: #fff; }
 table.xl th.lbl, table.xl th.l { text-align: left; }
-table.xl th.blank { border-color: transparent; background: transparent; }
+table.xl th.blank { background: #fff; } /* 左上角空白格保留框線,表格才是完整矩形 */
 table.xl .neg { color: #f00; }
 table.xl tr.hl th, table.xl tr.hl td { background: #fff2cc; }
 table.xl tr.peach th, table.xl tr.peach td { background: #f8cbad; font-weight: 600; }
