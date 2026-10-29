@@ -94,3 +94,11 @@ table.weights td input { width: 90px; text-align: right; }
 table.weights th:first-child, table.weights td:first-child { text-align: left; }
 #sheet[hidden] { display: none; }
 #weightWarn { margin-top: 16px; }
+
+/* 外觀對齊 Excel:標題/列名為黑字、年份粗體;數字欄置中且不顯示上下箭頭 */
+table.xl th { color: #111; font-size: 13px; }
+table.xl.matrix th.yr { font-weight: 700; }
+.xl td.in input { text-align: center; }
+.xl input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+.xl input[type=number]::-webkit-inner-spin-button, .xl input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.xl input::placeholder { color: #111; opacity: .6; }
