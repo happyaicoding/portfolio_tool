@@ -1,6 +1,10 @@
 import { computeReport, strategyMonthly, parseDate, fmtDate, DEFAULT_SETTINGS, PRODUCTS, extent } from './core.js';
 import { loadFile } from './parse.js';
-import { CONFIG_NAME, parseConfig, toConfigText } from './config.js';
+import { CONFIG_NAME, parseConfig, toConfigText, settingsFromPlain, settingsToPlain, weightsFromPlain } from './config.js';
+import {
+  REGISTRY_NAME, fingerprints, diffFingerprints, describeDiff, parseRegistry, serializeRegistry,
+  checkName, checkNote, metricsOf, rankMetrics, diffValue, METRICS,
+} from './portfolios.js';
 import { lineChart, barChart, createHeatmap } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -18,9 +22,10 @@ const WKEY = 'portfolio_tool.weights.v1';
 // 桌面版把設定與權重存成資料夾內的 portfolio-config.json(換資料夾就是另一組設定,
 // 拷到別台電腦也跟著走);網站版沒有檔案權限,仍用 localStorage。
 const useConfigFile = typeof window.desktop?.readConfig === 'function';
-let config = { settings: {}, weights: {}, error: null }; // 目前載入的設定檔內容
+let config = { settings: {}, weights: {}, error: null }; // 目前資料夾的設定檔內容
 let lastConfigText = null; // 上次寫出的內容,一樣就不重複寫檔
 let configTimer = null;
+let pfEntry = {}; // 目前投資組合的資料夾指標;{} = 工作區根目錄(預設投組)
 
 const mergedSettings = () => ({
   ...DEFAULT_SETTINGS, ...config.settings,
@@ -45,18 +50,18 @@ async function flushConfig() {
   const text = toConfigText(mergedSettings(), config.weights);
   if (text === lastConfigText) return;
   lastConfigText = text;
-  if (await window.desktop.writeConfig(text)) { setConfigWarn(''); return; }
+  if (await window.desktop.writeConfig(pfEntry, text)) { setConfigWarn(''); return; }
   lastConfigText = null; // 寫失敗,下次變更再試一次
-  setConfigWarn(`寫不進資料夾內的 ${CONFIG_NAME}(資料夾唯讀、網路碟離線或已被編輯器鎖住),設定這次變更不會留下。`);
+  setConfigWarn(`寫不進「${pfLabel()}」資料夾內的 ${CONFIG_NAME}(資料夾唯讀、網路碟離線或已被編輯器鎖住),設定這次變更不會留下。`);
 }
 function setConfigWarn(msg) {
   const el = $('configWarn');
   el.textContent = msg;
   el.hidden = !msg;
 }
-// 讀目前資料夾的設定檔並套用到介面(啟動、換資料夾、重新載入時)
-async function applyConfigFile() {
-  config = parseConfig(await window.desktop.readConfig());
+// 讀指定投組資料夾的設定檔並套用到介面(啟動、換投組、按重新載入時)
+async function applyConfigFile(entry = pfEntry) {
+  config = parseConfig(await window.desktop.readConfig(entry));
   lastConfigText = toConfigText(mergedSettings(), config.weights);
   setConfigWarn(config.error ? `設定檔讀不到:${config.error},這次以預設值計算。` : '');
   writeSettings(mergedSettings());
@@ -172,7 +177,7 @@ function logEvent(type, content) {
   logLines.push(line);
   if (logLines.length > 1000) logLines = logLines.slice(-1000);
   renderLog();
-  if (window.desktop) window.desktop.appendLog(line);
+  if (window.desktop) window.desktop.appendLog(pfEntry, line);
   else {
     try { localStorage.setItem(LOGKEY, JSON.stringify(logLines.slice(-500))); } catch { /* 略過 */ }
   }
@@ -201,8 +206,9 @@ function logFileChanges(prev, cur) {
 
 function switchTab(tab) {
   for (const b of document.querySelectorAll('.tabs button[data-tab]')) b.classList.toggle('on', b.dataset.tab === tab);
-  for (const t of ['summary', 'settings', 'log']) $(`tab-${t}`).hidden = t !== tab;
+  for (const t of ['summary', 'settings', 'log', 'compare']) $(`tab-${t}`).hidden = t !== tab;
   if (tab === 'summary') render();
+  if (tab === 'compare') renderCompare();
 }
 
 // 截圖並記錄當下績效(僅桌面版)
@@ -212,7 +218,7 @@ async function takeSnapshot() {
   switchTab('summary');
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   const b = $('sheet').getBoundingClientRect();
-  const res = await window.desktop.saveSnapshot({
+  const res = await window.desktop.saveSnapshot(pfEntry, {
     x: b.left + window.scrollX, y: b.top + window.scrollY, width: Math.ceil(b.width), height: Math.ceil(b.height),
   });
   if (res.error) { logEvent('錯誤', `截圖失敗:${res.error}`); return; }
@@ -346,12 +352,7 @@ const money = (key, v) => setO(key, fmt(v), v < 0 ? 'neg' : '');
 
 // 原表的日軸是「開始日期 → 今天」(日週期!G8 反推尾日就是 TODAY()),尾端沒資料的日子以 0 計入。
 // 每日浮動區間與 95%單日風險值取的是軸尾往回的窗口,所以軸尾不延伸到今天這 5 格就跟原表差一點。
-function axisEnd() {
-  const now = new Date();
-  let last = -Infinity;
-  for (const s of strategies) for (const [d] of s.rows) if (d > last) last = d;
-  return Math.max(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()), last);
-}
+const axisEnd = () => axisEndFor(strategies);
 
 function render() {
   if (!strategies.length) return;
@@ -450,6 +451,336 @@ function render() {
     : '<tr><td>沒有符合門檻的區間</td></tr>';
 }
 
+// ---------- 投資組合版本(僅桌面版) ----------
+// 一個投資組合 = 工作區根目錄下的一個子資料夾(或對話框授權過的絕對路徑),
+// 資料夾內的 portfolio-config.json 仍是該投組即時設定的唯一來源;
+// portfolios.json 只記名稱、說明、資料夾、時間與「存檔當下的策略指紋」。
+
+const DEFAULT_PF = { id: 'default', name: '預設投組', note: '工作區根目錄裡的 CSV(還沒分投組)', sub: null, path: null, createdAt: null, savedAt: null, fingerprints: null };
+
+let pfList = []; // portfolios.json 的投組
+let pfCurrent = 'default';
+let pfPicked = null; // 新增投組時用對話框選過的資料夾
+let pfFolders = new Map(); // id → { exists, files }
+let pfStale = []; // 目前投組的指紋差異
+let migrateTarget = null; // 搬檔要搬進的子資料夾名
+
+let first = true;
+let prevFiles = null;
+
+const pfById = (id) => (id === 'default' ? DEFAULT_PF : pfList.find((p) => p.id === id));
+const entryOf = (p) => (!p || p.id === 'default' ? {} : { sub: p.sub, path: p.path });
+const pfLabel = () => (pfById(pfCurrent) || DEFAULT_PF).name;
+const setStatus = (msg, cls = 'status') => { $('status').className = cls; $('status').textContent = msg; };
+const pfErr = (msg) => { $('pfErr').textContent = msg; $('pfErr').hidden = !msg; };
+
+async function loadRegistry() {
+  const res = parseRegistry(await window.desktop.readRegistry());
+  if (res.error) setConfigWarn(`投組清單 ${REGISTRY_NAME} 讀不到:${res.error},這次只顯示預設投組。`);
+  pfList = res.portfolios;
+  if (!pfList.some((p) => p.id === pfCurrent)) pfCurrent = 'default';
+}
+async function saveRegistry() {
+  if (!await window.desktop.writeRegistry(serializeRegistry(pfList))) {
+    setStatus(`寫不進工作區的 ${REGISTRY_NAME},投組清單的變更不會留下。`, 'status err');
+  }
+}
+
+// 各投組資料夾的存在與檔案數(給次分頁與搬檔提示用,不讀內容)
+async function scanFolders() {
+  pfFolders = new Map();
+  for (const p of [DEFAULT_PF, ...pfList]) {
+    const st = await window.desktop.stat(entryOf(p));
+    pfFolders.set(p.id, st);
+  }
+  const loose = pfFolders.get('default')?.files || 0;
+  $('migratePanel').hidden = !(loose > 0 && pfList.length > 0);
+  if (loose > 0 && pfList.length > 0) {
+    $('migrateHint').textContent =
+      `工作區根目錄還有 ${loose} 個 CSV 沒歸到任何投組。建議把它們收進一個子資料夾,之後根目錄只放 ${REGISTRY_NAME} 與各投組的資料夾。`;
+  }
+}
+
+function renderPfTabs() {
+  const bar = $('pfTabs');
+  if (!window.desktop) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const cols = [DEFAULT_PF, ...pfList].filter((p) => p.id === 'default' ? (pfFolders.get('default')?.files || 0) > 0 : true);
+  bar.innerHTML = cols.map((p) => {
+    const st = pfFolders.get(p.id) || { exists: false, files: 0 };
+    const cls = [p.id === pfCurrent ? 'on' : '', st.exists ? '' : 'stale'].filter(Boolean).join(' ');
+    const title = st.exists ? `${p.note || p.name}(${st.files} 個 CSV)` : '資料夾不存在,按「重新指定」選它現在的位置';
+    return `<button type="button" class="${cls}" data-pf="${p.id}" title="${esc(title)}">${esc(p.name)}${st.exists ? '' : ' ⚠'}</button>`;
+  }).join('') + '<button type="button" class="pf-add" id="pfAddBtn">＋ 新增投組</button>';
+  renderPfNote();
+}
+
+function renderPfNote() {
+  const el = $('pfNote');
+  if (!window.desktop) { el.hidden = true; return; }
+  const p = pfById(pfCurrent) || DEFAULT_PF;
+  const st = pfFolders.get(p.id) || { exists: true, files: 0 };
+  let msg = `${p.name}${p.note ? ' —— ' + p.note : ''}`;
+  if (!st.exists) msg += ' —— 資料夾不存在,數字是上一份載入的殘留,請按「重新指定」';
+  else if (pfStale.length) msg += ` —— ⚠ ${pfStale.map((d) => describeDiff(d)).join(';')}`;
+  el.textContent = msg;
+  el.hidden = false;
+  el.classList.toggle('err', !st.exists || pfStale.length > 0);
+}
+
+const axisEndFor = (list) => {
+  const now = new Date();
+  let last = -Infinity;
+  for (const s of list) for (const [d] of s.rows) if (d > last) last = d;
+  return Math.max(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()), last);
+};
+
+// 把一個資料夾讀成策略清單(用該資料夾自己的設定檔),不動到目前投組以外的狀態
+async function readPortfolio(p) {
+  const entry = entryOf(p);
+  const res = await window.desktop.readFiles(entry);
+  if (res.error) return { id: p.id, name: p.name, note: p.note, error: `資料夾讀不到:${res.error}` };
+  const files = res.files || [];
+  if (!files.length) return { id: p.id, name: p.name, note: p.note, error: '這個資料夾沒有 CSV/TSV/TXT 檔' };
+  const list = [];
+  try {
+    for (const f of files) {
+      const got = await loadFile(new File([f.data], f.name));
+      if (!got.length) return { id: p.id, name: p.name, note: p.note, error: `「${f.name}」找不到「日期 + 損益」的資料欄` };
+      for (const s of got) list.push(s);
+    }
+  } catch (e) {
+    return { id: p.id, name: p.name, note: p.note, error: e.message || String(e) };
+  }
+  const cfg = parseConfig(await window.desktop.readConfig(entry));
+  const settings = { ...DEFAULT_SETTINGS, ...cfg.settings, lots: { ...DEFAULT_SETTINGS.lots, ...(cfg.settings.lots || {}) } };
+  const named = list.map((s) => ({ ...s, allocation: cfg.weights[s.name] ?? 1 }));
+  const r = computeReport(named, settings, { startDate: settings.startDate ?? undefined, lastDate: axisEndFor(named) });
+  if (!r) return { id: p.id, name: p.name, note: p.note, error: '起始日晚於該資料夾的資料範圍,算不出報表' };
+  return {
+    id: p.id, name: p.name, note: p.note, metrics: metricsOf(r, named), settings,
+    hasBaseline: !!p.fingerprints,
+    diffs: p.fingerprints ? diffFingerprints(p.fingerprints, fingerprints(named)) : [],
+  };
+}
+
+function cmpCell(kind, v, signed = false) {
+  if (!Number.isFinite(v)) return '—';
+  const abs = Math.abs(v);
+  let s;
+  if (kind === 'money') s = nf.format(Math.round(abs));
+  else if (kind === 'pct2') s = (abs * 100).toFixed(2) + '%';
+  else if (kind === 'pct1') s = (abs * 100).toFixed(1) + '%';
+  else if (kind === 'num1') s = abs.toFixed(1);
+  else if (kind === 'num2') s = abs.toFixed(2);
+  else s = String(Math.round(abs));
+  const sign = v < 0 ? '-' : signed ? '+' : '';
+  return sign + s;
+}
+
+async function renderCompare() {
+  if (!window.desktop) return;
+  const busy = $('cmpBusy');
+  busy.hidden = false;
+  const cols = [DEFAULT_PF, ...pfList].filter((p) => p.id === 'default' ? (pfFolders.get('default')?.files || 0) > 0 : true);
+  const rows = [];
+  for (const p of cols) rows.push(await readPortfolio(p));
+  busy.hidden = true;
+
+  const sel = $('cmpBase');
+  const keep = sel.value;
+  sel.innerHTML = rows.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
+  if (rows.some((r) => r.id === keep)) sel.value = keep;
+  const baseIdx = Math.max(0, rows.findIndex((r) => r.id === sel.value));
+  const showDiff = $('cmpDiff').checked && rows.length > 1;
+  const rank = rankMetrics(rows);
+
+  const head = `<tr><th>指標</th>${rows.map((r) => {
+    const st = pfFolders.get(r.id) || {};
+    const sub = r.error ? '資料夾有問題'
+      : (r.diffs && r.diffs.length ? `⚠ ${r.diffs.length} 個檔內容已換過` : `${(st.files || 0)} 個 CSV${r.hasBaseline ? '' : ' · 尚未建指紋基準'}`);
+    return `<th class="pf-name">${esc(r.name)}<small>${esc(r.note || '')}</small><small>${esc(sub)}</small></th>`;
+  }).join('')}</tr>`;
+  const ops = `<tr><th>操作</th>${rows.map((r) => {
+    const acts = [`<button type="button" data-act="open" data-id="${r.id}">開</button>`];
+    if (r.error) acts.push(`<button type="button" data-act="repoint" data-id="${r.id}">重新指定</button>`);
+    else {
+      // 還沒建基準時也要有按鈕,否則使用者永遠沒辦法開始比對內容指紋
+      acts.push(`<button type="button" data-act="refresh" data-id="${r.id}">${r.hasBaseline ? '更新指紋' : '建立基準'}</button>`);
+      if (r.id !== 'default') acts.push(`<button type="button" data-act="remove" data-id="${r.id}">移除</button>`);
+    }
+    return `<td class="pf-name">${acts.join(' ')}</td>`;
+  }).join('')}</tr>`;
+  const body = METRICS.map((m) => {
+    const cells = rows.map((r, i) => {
+      if (r.error) return `<td class="err">${esc(r.error)}</td>`;
+      const v = r.metrics[m.key];
+      const base = rows[baseIdx].error ? null : rows[baseIdx].metrics[m.key];
+      const d = showDiff && i !== baseIdx ? diffValue(v, base) : null;
+      const cls = [];
+      if (rank[m.key].best === i) cls.push('best');
+      if (rank[m.key].worst === i) cls.push('worst');
+      if (Number.isFinite(v) && v < 0 && !showDiff) cls.push('neg');
+      const txt = d == null ? cmpCell(m.kind, v) : (d === 0 ? '=' : cmpCell(m.kind, d, true));
+      return `<td class="${cls.join(' ')}">${txt}</td>`;
+    }).join('');
+    return `<tr><th>${esc(m.label)}${m.cell ? `<small>原表 ${m.cell}</small>` : ''}</th>${cells}</tr>`;
+  }).join('');
+  $('cmpTable').innerHTML = `<thead>${head}${ops}</thead><tbody>${body}</tbody>`;
+}
+
+// ---------- 投組操作 ----------
+
+async function openPortfolio(id) {
+  const p = pfById(id);
+  if (!p) return;
+  const entry = entryOf(p);
+  const act = await window.desktop.activate(entry);
+  if (act.error) { setStatus(`切換到「${p.name}」失敗:${act.error}`, 'status err'); return; }
+  pfEntry = entry;
+  pfCurrent = id;
+  strategies = []; // 不沿用上一個投組的權重與資料
+  prevFiles = null;
+  first = true;
+  pfStale = [];
+  await applyConfigFile(entry);
+  logLines = await window.desktop.readLog(entry);
+  renderLog();
+  await loadFolderFiles();
+  renderPfTabs();
+}
+
+async function checkStale() {
+  const p = pfById(pfCurrent);
+  if (!p || !p.fingerprints) { pfStale = []; return; }
+  pfStale = diffFingerprints(p.fingerprints, fingerprints(strategies));
+}
+
+async function addPortfolio() {
+  const name = $('pfName').value.trim();
+  const note = $('pfNoteIn').value.trim();
+  const err = checkName(pfList, name) || checkNote(note);
+  if (err) return pfErr(err);
+  let sub = null;
+  let path = null;
+  if ($('pfDir').value === 'new') {
+    const r = await window.desktop.makeSubFolder(name);
+    if (r.error) return pfErr(r.error);
+    sub = r.sub;
+  } else {
+    if (!pfPicked) return pfErr('還沒選資料夾:按「選資料夾…」挑這個投組要用的那個。');
+    path = pfPicked;
+  }
+  const entry = { id: `p${Date.now().toString(36)}`, name, note, sub, path, createdAt: new Date().toISOString(), savedAt: null, fingerprints: null };
+  pfList.push(entry);
+  await saveRegistry();
+  pfPicked = null;
+  $('pfName').value = '';
+  $('pfNoteIn').value = '';
+  $('pfPickPath').hidden = true;
+  $('pfClearPick').hidden = true;
+  pfErr('');
+  await scanFolders();
+  migrateTarget = sub;
+  if ((pfFolders.get(entry.id)?.files || 0) > 0) {
+    // 資料夾已經有 CSV(選既有資料夾,或根目錄那批剛複製進去)→ 立刻建指紋基準
+    entry.fingerprints = fingerprints(await listFor(entry));
+    entry.savedAt = new Date().toISOString();
+    await saveRegistry();
+  } else {
+    $('migratePanel').hidden = false;
+    $('migrateHint').textContent = `「${name}」的資料夾是空的。要把它目前用的 CSV 放進去,可以按下面的按鈕把根目錄的 CSV 複製過去(只複製,不刪)。`;
+  }
+  renderPfTabs();
+}
+
+async function removePortfolio(id) {
+  const p = pfById(id);
+  if (!p || p.id === 'default') return;
+  pfList = pfList.filter((x) => x.id !== id);
+  await saveRegistry();
+  const line = `${stamp()} | 移除投組 | ${p.name} | 資料夾仍保留:${p.path || p.sub || '(根目錄)'},沒有刪除任何 CSV`;
+  await window.desktop.appendLog(entryOf(p), line); // 寫進該投組自己的記錄檔
+  if (pfCurrent === id) await openPortfolio('default');
+  else { await scanFolders(); renderPfTabs(); }
+}
+
+async function repointPortfolio(id) {
+  const p = pfById(id);
+  if (!p || p.id === 'default') return;
+  const r = await window.desktop.pickFolder();
+  if (r.canceled) return;
+  p.path = r.path;
+  p.sub = null;
+  await saveRegistry();
+  await scanFolders();
+  if (pfCurrent === id) await openPortfolio(id);
+  else renderPfTabs();
+}
+
+async function refreshFingerprints(id) {
+  const p = pfById(id);
+  if (!p) return;
+  const res = await readPortfolio(p);
+  if (res.error) return pfErr(res.error);
+  p.fingerprints = fingerprints(await listFor(p));
+  p.savedAt = new Date().toISOString();
+  await saveRegistry();
+  if (pfCurrent === id) await checkStale();
+  renderPfTabs();
+  await renderCompare();
+}
+
+// 只取該投組的策略清單(名稱與筆數),給指紋用
+async function listFor(p) {
+  const res = await window.desktop.readFiles(entryOf(p));
+  const out = [];
+  for (const f of res.files || []) for (const s of await loadFile(new File([f.data], f.name))) out.push(s);
+  return out;
+}
+
+async function runMigrate() {
+  if (!migrateTarget) return pfErr('先新增一個投組(或指定要搬進的子資料夾)。');
+  const state = $('migrateState');
+  state.className = 'status';
+  state.textContent = '複製中…';
+  const r = await window.desktop.copyLooseTo(migrateTarget);
+  if (r.error) { state.className = 'status err'; state.textContent = `複製失敗:${r.error}`; return; }
+  const src = await window.desktop.readFiles({});
+  const dst = await window.desktop.readFiles({ sub: migrateTarget });
+  const same = (src.files || []).filter((a) => (dst.files || []).some((b) => b.name === a.name && b.size === a.size));
+  state.textContent = `已複製 ${r.moved.length} 個檔到「${migrateTarget}」;其中 ${same.length} 個兩邊大小一致。原始檔還在根目錄,沒有刪除。`;
+  migrateExpected = same.map((f) => ({ name: f.name, size: f.size }));
+  $('migrateDelete').hidden = same.length === 0;
+  // 搬完就替這個投組建好指紋基準,之後換策略才比得出來
+  const target = pfList.find((p) => p.sub === migrateTarget);
+  if (target && same.length) {
+    target.fingerprints = fingerprints(await listFor(target));
+    target.savedAt = new Date().toISOString();
+    await saveRegistry();
+  }
+}
+let migrateExpected = [];
+
+async function deleteLooseFiles() {
+  if (!migrateTarget || !migrateExpected.length) return;
+  const r = await window.desktop.deleteLoose(migrateTarget, migrateExpected);
+  const state = $('migrateState');
+  if (r.error) { state.className = 'status err'; state.textContent = `刪除失敗:${r.error}`; return; }
+  state.className = 'status';
+  state.textContent = `已刪除根目錄 ${r.deleted.length} 個檔${r.skipped.length ? `;${r.skipped.length} 個因大小不符被保留:${r.skipped.join(', ')}` : ''}。「${migrateTarget}」裡的副本不受影響。`;
+  $('migrateDelete').hidden = true;
+  await scanFolders();
+  const def = pfFolders.get('default');
+  if (!def?.files) await openPortfolio(pfList.find((p) => p.sub === migrateTarget)?.id || pfCurrent);
+  renderPfTabs();
+  if (!(def?.files > 0)) $('migratePanel').hidden = true;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // ---------- 事件 ----------
 
 buildSheet();
@@ -488,53 +819,110 @@ drop.addEventListener('drop', (e) => {
   if (e.dataTransfer.files.length) ingestAndLog([...e.dataTransfer.files]);
 });
 
-// ---------- 桌面版:自動讀取資料夾內所有 CSV ----------
+// ---------- 桌面版:工作區根目錄 + 每個投資組合一個資料夾 ----------
+
+async function showFolder() {
+  const ws = await window.desktop.getWorkspace();
+  const a = ws.active || {};
+  const dir = a.sub ? `${ws.root}\\${a.sub}` : (a.path || ws.root);
+  $('folderPath').textContent = dir;
+  $('logHint').textContent = `記錄檔:${dir} 內的 portfolio-tool.log(可用記事本開啟);截圖存在 ${dir} 內的 snapshots 資料夾。`;
+}
+
+// 讀目前投組資料夾的 CSV 並重算。設定檔只在啟動/換投組/按重新載入時重讀,
+// 檔案自動重載不重讀,免得蓋掉還沒寫進檔案的變更。
+async function loadFolderFiles() {
+  const res = await window.desktop.readFiles(pfEntry);
+  if (res.error) {
+    setStatus(`資料夾讀不到:${res.error}`, 'status err');
+    if (prevFiles?.size) { logFileChanges(prevFiles, new Map()); prevFiles = new Map(); }
+    return;
+  }
+  const files = res.files || [];
+  if (!files.length) {
+    setStatus('資料夾內沒有 CSV 檔(把各策略的日損益 CSV 放進去即可)', 'status err');
+    if (prevFiles?.size) { logFileChanges(prevFiles, new Map()); prevFiles = new Map(); }
+    return;
+  }
+  const info = await ingest(files.map((f) => new File([f.data], f.name)), { reload: !first });
+  if (!info) return;
+  const cur = new Map(files.map((f) => [f.name, { ...info.get(f.name), size: f.size, mtime: f.mtime }]));
+  logFileChanges(prevFiles, cur);
+  prevFiles = cur;
+  first = false;
+  await checkStale();
+  renderPfNote();
+}
+
+async function initDesktop() {
+  await loadRegistry();
+  await scanFolders();
+  await showFolder();
+  // 根目錄沒有散落 CSV 的工作區(例如只有子資料夾的 mock 工作區),直接開第一個投組,
+  // 不要停在「預設投組」然後報「資料夾內沒有 CSV 檔」。
+  if (pfCurrent === 'default' && !(pfFolders.get('default')?.files > 0) && pfList.length) pfCurrent = pfList[0].id;
+  await openPortfolio(pfCurrent); // 套設定 → 讀記錄 → 讀 CSV → 畫次分頁
+}
 
 if (window.desktop) {
   $('folderBar').hidden = false;
   $('snapBtn').hidden = false;
   $('openLog').hidden = false;
-  $('openLog').addEventListener('click', () => window.desktop.showLog());
-  let first = true;
-  let prevFiles = null; // 檔名 → { size, mtime, rows, ... },用來比對哪些檔案變動
-  const showFolder = async () => {
-    const f = await window.desktop.getFolder();
-    $('folderPath').textContent = f;
-    $('logHint').textContent = `記錄檔:${f} 內的 portfolio-tool.log(可用記事本開啟);截圖存在 ${f} 內的 snapshots 資料夾。`;
-  };
-  const loadFolder = async () => {
-    const files = await window.desktop.readFolder();
-    if (!files.length) {
-      $('status').className = 'status err';
-      $('status').textContent = '資料夾內沒有 CSV 檔(把各策略的日損益 CSV 放進去即可)';
-      if (prevFiles?.size) { logFileChanges(prevFiles, new Map()); prevFiles = new Map(); }
-      return;
-    }
-    const info = await ingest(files.map((f) => new File([f.data], f.name)), { reload: !first });
-    if (!info) return;
-    const cur = new Map(files.map((f) => [f.name, { ...info.get(f.name), size: f.size, mtime: f.mtime }]));
-    logFileChanges(prevFiles, cur);
-    prevFiles = cur;
-    first = false;
-  };
+  $('cmpTab').hidden = false;
+  $('openLog').addEventListener('click', () => window.desktop.showLog(pfEntry));
+
+  // 換工作區根目錄 = 投組清單與所有投組都跟著換
   $('chooseFolder').addEventListener('click', async () => {
-    if (!await window.desktop.chooseFolder()) return;
-    strategies = []; // 換資料夾 = 換一組策略,清掉舊的才不會讓上一個資料夾的權重蓋掉新設定檔的
-    first = true;
-    prevFiles = null;
+    if (!await window.desktop.chooseWorkspace()) return;
+    pfCurrent = 'default';
+    pfList = [];
+    strategies = [];
+    await initDesktop();
+  });
+  $('reloadFolder').addEventListener('click', async () => {
+    await applyConfigFile(pfEntry);
     await showFolder();
-    await applyConfigFile(); // 新資料夾有自己的 portfolio-config.json
-    logLines = await window.desktop.readLog();
-    renderLog();
-    await loadFolder();
+    await loadFolderFiles();
   });
-  // 「重新載入」也重讀設定檔(讓你用記事本改完就能生效);檔案自動重載不讀,避免蓋掉還沒寫進檔案的變更
-  $('reloadFolder').addEventListener('click', async () => { await applyConfigFile(); await loadFolder(); });
-  window.desktop.onFolderChanged(loadFolder); // 資料夾內檔案有增減或修改,自動重讀
-  showFolder().then(async () => {
-    await applyConfigFile(); // 先帶入設定檔,再載入資料,起始日與權重才是這個資料夾自己的
-    logLines = await window.desktop.readLog(); // 先帶入以前的記錄,再接著記新的
-    renderLog();
-    await loadFolder();
+  window.desktop.onFolderChanged(loadFolderFiles);
+
+  $('pfTabs').addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.id === 'pfAddBtn') { switchTab('compare'); $('pfName').focus(); return; }
+    if (b.dataset.pf) await openPortfolio(b.dataset.pf);
   });
+  $('cmpTable').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const id = b.dataset.id;
+    if (b.dataset.act === 'open') await openPortfolio(id);
+    else if (b.dataset.act === 'remove') await removePortfolio(id);
+    else if (b.dataset.act === 'repoint') await repointPortfolio(id);
+    else if (b.dataset.act === 'refresh') await refreshFingerprints(id);
+    await renderCompare();
+  });
+  $('pfDir').addEventListener('change', () => {
+    $('pfPick').hidden = $('pfDir').value !== 'pick';
+  });
+  $('pfPick').addEventListener('click', async () => {
+    const r = await window.desktop.pickFolder();
+    if (r.canceled) return;
+    pfPicked = r.path;
+    $('pfPickPath').textContent = `已選:${r.path}`;
+    $('pfPickPath').hidden = false;
+    $('pfClearPick').hidden = false;
+  });
+  $('pfClearPick').addEventListener('click', () => {
+    pfPicked = null;
+    $('pfPickPath').hidden = true;
+    $('pfClearPick').hidden = true;
+  });
+  $('pfAdd').addEventListener('click', addPortfolio);
+  $('migrateBtn').addEventListener('click', runMigrate);
+  $('migrateDelete').addEventListener('click', deleteLooseFiles);
+  $('cmpBase').addEventListener('change', renderCompare);
+  $('cmpDiff').addEventListener('change', renderCompare);
+
+  initDesktop();
 }

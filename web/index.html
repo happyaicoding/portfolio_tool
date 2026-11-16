@@ -32,8 +32,12 @@
       <button type="button" role="tab" data-tab="summary" class="on">總表</button>
       <button type="button" role="tab" data-tab="settings">設定</button>
       <button type="button" role="tab" data-tab="log">記錄</button>
+      <button type="button" role="tab" data-tab="compare" id="cmpTab" hidden>投資組合比較</button>
       <button type="button" id="snapBtn" class="snap" hidden>📷 截圖並記錄</button>
     </nav>
+
+    <nav class="tabs pftabs" id="pfTabs" hidden></nav>
+    <p id="pfNote" class="lead" hidden></p>
 
     <div id="tab-summary">
     <p id="weightWarn" class="status err" hidden>所有策略的權重都是 0,沒有資料可計算。請到「設定」分頁調整權重。</p>
@@ -101,6 +105,36 @@
         <p id="logHint" class="lead"></p>
         <div class="actions"><button type="button" id="openLog" hidden>在資料夾中顯示記錄檔</button></div>
         <div class="scroll"><table id="logTable" class="plain logtable"></table></div>
+      </section>
+    </div>
+
+    <div id="tab-compare" hidden>
+      <section class="panel">
+        <h2>投資組合比較</h2>
+        <p class="lead">一個投資組合 = 工作區裡的一個資料夾,含它自己的 <code>portfolio-config.json</code>。數字一律用各資料夾「現在的 CSV」與「現在的設定」重算,指紋不同只在該欄標註,不會拿舊數字假比。</p>
+        <div class="grid">
+          <label>基準<select id="cmpBase"></select></label>
+          <label class="chk"><input type="checkbox" id="cmpDiff">顯示與基準的差值</label>
+        </div>
+        <div class="scroll"><table id="cmpTable" class="plain cmp"></table></div>
+        <p id="cmpBusy" class="lead" hidden>計算中…</p>
+      </section>
+      <section class="panel">
+        <h2>新增投資組合</h2>
+        <div class="grid">
+          <label>名稱<input id="pfName" type="text" maxlength="40" placeholder="例:龜烏A"></label>
+          <label>資料夾<select id="pfDir"><option value="new">在工作區下新建同名子資料夾</option><option value="pick">選一個既有資料夾</option></select></label>
+        </div>
+        <label class="wide">說明<input id="pfNoteIn" type="text" maxlength="200" placeholder="例:2026-11 加入避險那組,拿掉 7 號"></label>
+        <div class="actions"><button type="button" id="pfPick" hidden>選資料夾…</button><button type="button" id="pfAdd">加入清單</button><button type="button" id="pfClearPick" hidden>清除已選的資料夾</button></div>
+        <p id="pfPickPath" class="lead" hidden></p>
+        <p id="pfErr" class="status err" hidden></p>
+      </section>
+      <section class="panel" id="migratePanel" hidden>
+        <h2>把根目錄的 CSV 收進子資料夾</h2>
+        <p class="lead" id="migrateHint"></p>
+        <div class="actions"><button type="button" id="migrateBtn">複製進新子資料夾並比對</button><button type="button" id="migrateDelete" hidden>刪除根目錄的原始 CSV</button></div>
+        <p id="migrateState" class="status" role="status"></p>
       </section>
     </div>
   </div>

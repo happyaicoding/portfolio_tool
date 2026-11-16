@@ -28,12 +28,12 @@ try {
   const status = await win.textContent('#status');
   const kpi = await win.textContent('#sheet');
   const checks = [
-    ['載入 14 個策略', status.includes('已載入 14 個策略'), status],
-    ['全部月份平均獲利 21,161', kpi.includes('21,161'), ''],
-    ['月勝率 73.81%', kpi.includes('73.81%'), ''],
-    ['ROA 7.72', kpi.includes('7.72'), ''],
+    ['載入 20 個策略', status.includes('已載入 20 個策略'), status],
+    ['全部月份平均獲利 33,125(原表 D2)', kpi.includes('33,125'), ''],
+    ['月勝率 75.00%(原表 B5)', kpi.includes('75.00%'), ''],
+    ['ROA 9.81(原表 B6)', kpi.includes('9.81'), ''],
     ['沒有 console 錯誤', errors.length === 0, errors.join(' | ')],
-    ['設定分頁:14 個策略權重欄位', (await (async () => { await win.click('.tabs button[data-tab=settings]'); return win.locator('#alloc input').count(); })()) === 14, ''],
+    ['設定分頁:20 個策略權重欄位', (await (async () => { await win.click('.tabs button[data-tab=settings]'); return win.locator('#alloc input').count(); })()) === 20, ''],
   ];
   for (const [label, ok, detail] of checks) {
     if (!ok) fail++;

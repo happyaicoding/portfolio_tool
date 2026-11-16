@@ -143,3 +143,24 @@ table.hm tr.m th, table.hm tr.m td { height: 17px; font-size: 10px; }
 table.hm tr.m th { padding-left: 22px; }
 table.hm td, table.hm th.tot { color: var(--ink); }
 table.hm td.tot, table.hm th.tot { border-left: 3px solid var(--accent); }
+
+/* 投資組合次分頁:10 個以內也要放得下,字級縮小並允許橫向捲 */
+.pftabs { margin-top: 8px; flex-wrap: nowrap; overflow-x: auto; }
+.pftabs button { white-space: nowrap; padding: 5px 12px; font-size: 13px; }
+.pftabs button.stale { color: var(--neg); }
+.pftabs button.pf-add { margin-left: auto; align-self: center; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+
+/* 比較表:第一欄是指標,之後一欄一個投資組合 */
+table.cmp { border-collapse: collapse; font-size: 13px; }
+table.cmp th, table.cmp td { border: 1px solid var(--line); padding: 4px 8px; text-align: right; white-space: nowrap; }
+table.cmp thead th { text-align: left; background: var(--bg); position: sticky; top: 0; z-index: 1; }
+table.cmp tbody th { text-align: left; font-weight: 400; }
+table.cmp tbody th small { display: block; color: var(--muted); }
+table.cmp td.best { color: var(--pos); font-weight: 600; }
+table.cmp td.worst { color: var(--neg); }
+table.cmp td.pf-name { text-align: left; white-space: normal; min-width: 150px; max-width: 240px; }
+table.cmp td.pf-name small { display: block; color: var(--muted); }
+table.cmp td.err { color: var(--neg); text-align: left; white-space: normal; max-width: 240px; }
+
+label.wide { display: flex; margin-top: 8px; }
+label.chk { flex-direction: row; align-items: center; gap: 6px; color: var(--ink); }
