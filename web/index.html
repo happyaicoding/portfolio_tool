@@ -17,6 +17,7 @@
     <div><strong>資料夾</strong> <code id="folderPath"></code></div>
     <div class="actions"><button id="chooseFolder" type="button">選擇資料夾</button><button id="reloadFolder" type="button">重新載入</button></div>
     <span>自動讀取此資料夾內所有 CSV(每個檔案一個策略,或一張寬表);檔案有增減或修改時會自動更新。</span>
+    <p id="configWarn" class="status err" hidden></p>
   </section>
 
   <section id="drop" class="drop" tabindex="0">
@@ -36,6 +37,7 @@
 
     <div id="tab-summary">
     <p id="weightWarn" class="status err" hidden>所有策略的權重都是 0,沒有資料可計算。請到「設定」分頁調整權重。</p>
+    <p id="rangeWarn" class="status err" hidden>「起始日」晚於資料最後一天,該日期之後沒有資料可計算。請改用資料範圍內的日期,或把起始日留空白。</p>
     <div class="sheet" id="sheet">
       <div class="left" id="sheetLeft"></div>
       <div class="right">

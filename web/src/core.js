@@ -13,6 +13,7 @@ export const PRODUCTS = {
 export const DEFAULT_SETTINGS = {
   product: 'TMF',
   ratio: 1, // 總表 B19 比例
+  startDate: null, // 開始日期(原表寫在 文字檔 B1);null = 資料最早日。介面傳給 buildDailySeries 的 seriesOpts
   calcYear: null, // 總表 B14 計算年份(只影響「近三年每日浮動區間」與每日浮動區間的截止年底)
   endDate: null, // 總表 B30 資料結束日期(創高天數計算用),null = 資料最後一天
   txMargin: 636000, // 總表 C18 大台保證金
@@ -60,19 +61,41 @@ export function movingDayDD(arr, from = 0, to = arr.length) {
   return thisSum - maxSum;
 }
 
-const avg = (a, from, to) => {
+const sumRange = (a, from, to) => {
   let s = 0;
   for (let i = from; i < to; i++) s += a[i];
-  return s / (to - from);
+  return s;
 };
+const avg = (a, from, to) => (to <= from ? null : sumRange(a, from, to) / (to - from));
 // STDEVP:母體標準差
 const stdevp = (a, from, to) => {
   const m = avg(a, from, to);
+  if (m == null) return null;
   let s = 0;
   for (let i = from; i < to; i++) s += (a[i] - m) ** 2;
   return Math.sqrt(s / (to - from));
 };
 const round1 = (x) => Math.round(x * 10) / 10;
+// 不用 Math.min(...arr):V8 約 12.5 萬個引數就會爆 Stack
+export const extent = (a) => {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of a) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return [lo, hi];
+};
+// 對應 日週期!G2:H2 = ROUND(AVERAGE(...),1) ∓ ROUND(STDEVP(...),1):
+// 平均數與標準差各自先四捨五入到 0.1 再加減(與 round1(平均 - 標準差) 可能差 0.1)。
+const floatBand = (a, from, to) => {
+  const m = avg(a, from, to);
+  const sd = stdevp(a, from, to);
+  if (m == null || sd == null) return null;
+  return [round1(m) - round1(sd), round1(m) + round1(sd)];
+};
+// 窗口取不到資料時回傳 null,介面顯示「—」而不是把 NaN 當數字用
+const scaleBand = (b, k) => (b == null ? null : [b[0] * k, b[1] * k]);
 
 // ---------- 資料整併 ----------
 
@@ -94,6 +117,9 @@ export function buildDailySeries(strategies, { startDate = null, lastDate = null
   if (startDate != null) min = startDate;
   if (lastDate != null) max = lastDate;
   const n = Math.round((max - min) / DAY_MS) + 1;
+  // 起始日晚於資料末日(使用者把「起始日」填超過資料範圍)時沒有日序列可算,
+  // 回傳空讓上層顯示提示,而不是 new Array(負數) 丟 RangeError 讓畫面卡住。
+  if (n <= 0) return { dates: [], total: [], perStrategy: strategies.map(() => []) };
   const dates = new Array(n);
   for (let i = 0; i < n; i++) dates[i] = min + i * DAY_MS;
   const total = new Array(n).fill(0);
@@ -141,7 +167,16 @@ export function computeHighs(dates, daily, { endDate, threshold = 40 }) {
     }
   }
   const long = segments.filter((s) => s.days > threshold);
-  // 最新創高日 = 最後一個回落日 - 該段天數(對應 Y3 = X3 - Z3)
+  const byRecency = [...long].sort((a, b) => b.end - a.end);
+  // DD 40 Day Avg(總表 B31)= SUMIF/COUNTIF(創高計算!U3:U7):最近 5 段的平均天數,
+  // 不足 5 段就取現有的段數(對應 COUNTIF(">0") 只數有值的列)。
+  const recent5 = byRecency.slice(0, 5);
+  const recent5Avg = recent5.length
+    ? recent5.reduce((a, g) => a + g.days, 0) / recent5.length
+    : null;
+  // 最新創高日 = 最後一個回落日 - 該段天數(對應 Y3 = X3 - Z3)。
+  // 資料尾端已經重新創高時,原表的 X3 仍是「最後一段回落」的結束日,所以 Y3 會回傳
+  // 那段之前的日期(甚至早於資料第一天),而不是最近一次創高的日期。這裡維持與原表一致。
   let latestHigh = null;
   let latestHighDays = 0;
   for (let i = n - 1; i >= 0; i--) {
@@ -155,10 +190,11 @@ export function computeHighs(dates, daily, { endDate, threshold = 40 }) {
   return {
     streak,
     segments,
-    longByRecency: [...long].sort((a, b) => b.end - a.end),
+    longByRecency: byRecency,
     longByLength: [...long].sort((a, b) => b.days - a.days || a.end - b.end),
     latestHigh,
     latestHighDays,
+    recent5Avg,
   };
 }
 
@@ -286,29 +322,34 @@ export function computeReport(strategies, userSettings = {}, seriesOpts = {}) {
   const sum = (a) => a.reduce((x, y) => x + y, 0);
 
   // 以大台基準計算(TX),再乘 0.25 / 0.05 得小台/微台
+  // 比例 0 或資料全 0 時 nonZero/recent 是空的:這些指標「無法計算」,回傳 null(介面顯示「—」),
+  // 不要讓 0/0 的 NaN 流進後面的除法與顯示。
   const toTX = 1 / pf;
-  const avgAll = (sum(nonZero) / nonZero.length) * toTX;
-  const avgRecent = (sum(recent) / recent.length) * toTX;
-  const worstMonth = Math.min(...flat) * toTX;
+  const byProduct = (v) =>
+    v == null ? { TX: null, MTX: null, TMF: null } : { TX: v, MTX: v * PRODUCTS.MTX.factor, TMF: v * PRODUCTS.TMF.factor };
+  const avgAll = nonZero.length ? (sum(nonZero) / nonZero.length) * toTX : null;
+  const avgRecent = recent.length ? (sum(recent) / recent.length) * toTX : null;
+  const worstMonth = extent(flat)[0] * toTX;
   const pos = flat.filter((v) => v > 0).length;
-  const winRate = pos / nonZero.length;
+  const winRate = nonZero.length ? pos / nonZero.length : null;
   const totalProfitProd = sum(flat);
   const mddAll = maxDD(daily) * ratio; // TX 基準
   const maxPositionLoss = mddAll * 1.3;
-  const roa = (totalProfitProd / pf) / -maxPositionLoss; // 原式 (I17/-B7)*商品係數,換算成大台基準,結果與商品無關
-  const worstDay = Math.min(...daily) * ratio;
+  // 從不虧損(回撤 0)時 ROA 沒有分母,同樣是「無法計算」
+  const roa = maxPositionLoss === 0 ? null : (totalProfitProd / pf) / -maxPositionLoss; // 原式 (I17/-B7)*商品係數,換算成大台基準,結果與商品無關
+  const worstDay = extent(daily)[0] * ratio;
 
-  // 每日浮動區間(日週期 G2:H3)
-  const allStd = [round1(avg(daily, 0, G8) - stdevp(daily, 0, G8)), round1(avg(daily, 0, G8)) + round1(stdevp(daily, 0, G8))];
-  // 原式 INDEX(B:B, G8-1095):INDEX(B:B, G8) → 最後 1096 筆
-  const rLo = Math.max(0, G8 - 1096);
-  const a3 = round1(avg(daily, rLo, G8)) - round1(stdevp(daily, rLo, G8));
-  const b3 = round1(avg(daily, rLo, G8)) + round1(stdevp(daily, rLo, G8));
-  const band = {
-    all: [allStd[0] * ratio * pf, allStd[1] * ratio * pf],
-    recent: [a3 * ratio * pf, b3 * ratio * pf],
+  // 每日浮動區間(日週期 G2:H3 / G3:H3)
+  const bandRaw = {
+    all: floatBand(daily, 0, G8),
+    // 原式 INDEX(B:B, G8-1095):INDEX(B:B, G8) → 最後 1096 筆
+    recent: floatBand(daily, Math.max(0, G8 - 1096), G8),
   };
-  const var95 = -((Math.abs(band.all[0]) + Math.abs(band.all[1])) / 2) * 1.97;
+  const band = {
+    all: scaleBand(bandRaw.all, ratio * pf),
+    recent: scaleBand(bandRaw.recent, ratio * pf),
+  };
+  const var95 = band.all == null ? null : -((Math.abs(band.all[0]) + Math.abs(band.all[1])) / 2) * 1.97;
 
   // 年報酬 / 年 DD
   const annualRet = years.map((_, c) => sum(m.map((row) => row[c])));
@@ -336,7 +377,9 @@ export function computeReport(strategies, userSettings = {}, seriesOpts = {}) {
   const futuresMargin = margin * 1.3;
   const minCapital = futuresMargin - strategyLoss;
   const twoSetCapital = futuresMargin - strategyLoss * 2;
-  const expectedAnnual = Math.min(avgAll * pf, avgRecent * pf) * 12;
+  // min(全部月平均, 近三年月平均) × 商品倍率 × 12;兩個都算不出來時才是 null
+  const expAvail = [avgAll, avgRecent].filter((v) => v != null);
+  const expectedAnnual = expAvail.length ? Math.min(...expAvail) * pf * 12 : null;
   const capitalBase = s.capital ? s.capital : minCapital;
   const needMargin = (lots.dayTrade + lots.hold + lots.excess) * marginPerLot;
   const marginCheck = needMargin < minCapital ? 'YES' : `不足最少資金${minCapital - needMargin}`;
@@ -351,13 +394,13 @@ export function computeReport(strategies, userSettings = {}, seriesOpts = {}) {
     years,
     matrix: m,
     kpi: {
-      avgAll: { TX: avgAll, MTX: avgAll * 0.25, TMF: avgAll * 0.05 },
-      avgRecent: { TX: avgRecent, MTX: avgRecent * 0.25, TMF: avgRecent * 0.05 },
-      worstMonth: { TX: worstMonth, MTX: worstMonth * 0.25, TMF: worstMonth * 0.05 },
+      avgAll: byProduct(avgAll),
+      avgRecent: byProduct(avgRecent),
+      worstMonth: byProduct(worstMonth),
       winRate,
       roa,
-      maxPositionLoss: { TX: maxPositionLoss, MTX: maxPositionLoss * 0.25, TMF: maxPositionLoss * 0.05 },
-      worstDay: { TX: worstDay, MTX: worstDay * 0.25, TMF: worstDay * 0.05 },
+      maxPositionLoss: byProduct(maxPositionLoss),
+      worstDay: byProduct(worstDay),
       totalProfit: totalProfitProd,
     },
     band,
@@ -379,8 +422,8 @@ export function computeReport(strategies, userSettings = {}, seriesOpts = {}) {
       minCapital,
       twoSetCapital,
       expectedAnnual,
-      expectedReturn: expectedAnnual / capitalBase,
-      expectedRisk: strategyLoss / capitalBase,
+      expectedReturn: expectedAnnual == null || capitalBase === 0 ? null : expectedAnnual / capitalBase,
+      expectedRisk: capitalBase === 0 ? null : strategyLoss / capitalBase,
       marginCheck,
     },
     highs: { ...highs, endDate },

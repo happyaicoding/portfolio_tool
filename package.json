@@ -6,8 +6,9 @@
   "description": "黃金龜投資組合績效報表(網站 + 桌面版)",
   "main": "desktop/main.cjs",
   "scripts": {
-    "start": "python3 -m http.server 8000 --directory web",
-    "test": "node tests/parse.test.mjs && node tests/xlsm.test.mjs",
+    "start": "node tools/serve.mjs",
+    "test": "node tests/parse.test.mjs && node tests/config.test.mjs && node tests/core.test.mjs && node tests/xlsm.test.mjs && node tests/excel-oracle.test.mjs",
+    "check-csv": "node tools/check-csv.mjs",
     "desktop": "electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win portable --x64",

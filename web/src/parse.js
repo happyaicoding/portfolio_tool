@@ -8,9 +8,22 @@ const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
 
 export function parseCsvText(text) {
   text = text.replace(/^﻿/, '');
-  const first = text.split('\n', 1)[0];
-  const count = (ch) => first.split(ch).length - 1;
-  const delim = [',', '\t', ';'].reduce((best, ch) => (count(ch) > count(best) ? ch : best), ',');
+  // 分隔符號改用「前面幾個非空行」統計:只看第一行的話,檔案開頭有空白行或說明文字
+  // (MTC 匯出常這樣)就會拿那行去判斷,整份檔案的欄位會全部錯位。
+  // 評分先比「這個符號出現在幾行」,再比出現總次數:說明行可能自帶好幾個逗號,
+  // 但真正的資料行是每行都有分隔符號。
+  const sample = text.split(/\r?\n/, 40).filter((l) => l.trim() !== '').slice(0, 8);
+  const score = (ch) => {
+    let lines = 0;
+    let total = 0;
+    for (const l of sample) {
+      const n = l.split(ch).length - 1;
+      if (n > 0) lines++;
+      total += n;
+    }
+    return lines * 1000 + total;
+  };
+  const delim = [',', '\t', ';'].reduce((best, ch) => (score(ch) > score(best) ? ch : best), ',');
   const rows = [];
   let row = [];
   let cell = '';

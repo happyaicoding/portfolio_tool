@@ -1,5 +1,6 @@
-import { computeReport, strategyMonthly, parseDate, fmtDate, DEFAULT_SETTINGS, PRODUCTS } from './core.js';
+import { computeReport, strategyMonthly, parseDate, fmtDate, DEFAULT_SETTINGS, PRODUCTS, extent } from './core.js';
 import { loadFile } from './parse.js';
+import { CONFIG_NAME, parseConfig, toConfigText } from './config.js';
 import { lineChart, barChart, createHeatmap } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,12 +13,53 @@ const heatmap = createHeatmap($('heatmap'), {
 let strategies = []; // [{ name, rows, allocation }]
 let lastReport = null; // 最近一次 computeReport 的結果(截圖記錄用)
 const KEY = 'portfolio_tool.settings.v1';
+const WKEY = 'portfolio_tool.weights.v1';
+
+// 桌面版把設定與權重存成資料夾內的 portfolio-config.json(換資料夾就是另一組設定,
+// 拷到別台電腦也跟著走);網站版沒有檔案權限,仍用 localStorage。
+const useConfigFile = typeof window.desktop?.readConfig === 'function';
+let config = { settings: {}, weights: {}, error: null }; // 目前載入的設定檔內容
+let lastConfigText = null; // 上次寫出的內容,一樣就不重複寫檔
+let configTimer = null;
+
+const mergedSettings = () => ({
+  ...DEFAULT_SETTINGS, ...config.settings,
+  lots: { ...DEFAULT_SETTINGS.lots, ...(config.settings.lots || {}) },
+});
 
 function saveSettings(s) {
+  if (useConfigFile) { config.settings = s; queueConfigWrite(); return; }
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* 隱私模式等情況略過 */ }
 }
 function loadSettings() {
+  if (useConfigFile) return config.settings;
   try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; }
+}
+
+function queueConfigWrite() {
+  if (!useConfigFile) return;
+  clearTimeout(configTimer);
+  configTimer = setTimeout(flushConfig, 400);
+}
+async function flushConfig() {
+  const text = toConfigText(mergedSettings(), config.weights);
+  if (text === lastConfigText) return;
+  lastConfigText = text;
+  if (await window.desktop.writeConfig(text)) { setConfigWarn(''); return; }
+  lastConfigText = null; // 寫失敗,下次變更再試一次
+  setConfigWarn(`寫不進資料夾內的 ${CONFIG_NAME}(資料夾唯讀、網路碟離線或已被編輯器鎖住),設定這次變更不會留下。`);
+}
+function setConfigWarn(msg) {
+  const el = $('configWarn');
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+// 讀目前資料夾的設定檔並套用到介面(啟動、換資料夾、重新載入時)
+async function applyConfigFile() {
+  config = parseConfig(await window.desktop.readConfig());
+  lastConfigText = toConfigText(mergedSettings(), config.weights);
+  setConfigWarn(config.error ? `設定檔讀不到:${config.error},這次以預設值計算。` : '');
+  writeSettings(mergedSettings());
 }
 
 // ---------- 讀檔 ----------
@@ -36,11 +78,12 @@ async function ingest(files, { reload = false } = {}) {
       if (!got.length) throw new Error(`「${f.name}」找不到「日期 + 損益」的資料欄`);
       loaded.push(...got);
       const ds = got.flatMap((s) => s.rows.map((r) => r[0]));
+      const [fmin, fmax] = extent(ds);
       info.set(f.name, {
         strategies: got.length,
         rows: Math.max(...got.map((s) => s.rows.length)),
-        min: Math.min(...ds),
-        max: Math.max(...ds),
+        min: fmin,
+        max: fmax,
       });
     }
     const seen = new Map();
@@ -53,11 +96,12 @@ async function ingest(files, { reload = false } = {}) {
       return { ...s, name, allocation: oldAlloc.get(name) ?? saved[name] ?? 1 }; // 保留已調整的權重(含上次關閉前存下的)
     });
     const all = strategies.flatMap((s) => s.rows.map((r) => r[0]));
-    const min = Math.min(...all), max = Math.max(...all);
+    const [min, max] = extent(all);
     status.textContent = `已載入 ${strategies.length} 個策略,${fmtDate(min)} ~ ${fmtDate(max)}`;
     if (!reload) {
-      $('startDate').value = fileStart != null ? fmtDate(fileStart) : '';
-      $('endDate').value = '';
+      // 只有檔案自帶開始日期(.xlsm 的「文字檔 B1」)才覆寫;CSV 沒帶時保留設定裡記住的起始日,
+      // 清空會把開始日期之前的資料算進來,總獲利/月平均/ROA 就跟原表對不上了。
+      if (fileStart != null) $('startDate').value = fmtDate(fileStart);
     }
     $('startDate').placeholder = fmtDate(min);
     buildAllocInputs();
@@ -71,21 +115,24 @@ async function ingest(files, { reload = false } = {}) {
   }
 }
 
-const WKEY = 'portfolio_tool.weights.v1';
+const weightMap = () => Object.fromEntries(strategies.map((s) => [s.name, s.allocation]));
 function loadWeights() {
+  if (useConfigFile) return config.weights;
   try { return JSON.parse(localStorage.getItem(WKEY)) || {}; } catch { return {}; }
 }
 function saveWeights() {
-  try { localStorage.setItem(WKEY, JSON.stringify(Object.fromEntries(strategies.map((s) => [s.name, s.allocation])))); } catch { /* 略過 */ }
+  if (useConfigFile) { config.weights = weightMap(); queueConfigWrite(); return; }
+  try { localStorage.setItem(WKEY, JSON.stringify(weightMap())); } catch { /* 略過 */ }
 }
 
 function buildAllocInputs() {
   const rows = strategies.map((s, i) => {
     const dates = s.rows.map((r) => r[0]);
+    const [from, to] = extent(dates);
     const total = s.rows.reduce((a, r) => a + r[1], 0);
     return `<tr><th>${s.name}</th>
       <td><input type="number" step="0.1" min="0" data-i="${i}" value="${s.allocation}" aria-label="${s.name} 權重"></td>
-      <td>${fmtDate(Math.min(...dates))} ~ ${fmtDate(Math.max(...dates))}</td>
+      <td>${fmtDate(from)} ~ ${fmtDate(to)}</td>
       <td>${s.rows.length}</td>
       <td class="${total < 0 ? 'neg' : ''}">${nf.format(total)}</td></tr>`;
   });
@@ -257,6 +304,7 @@ function readSettings() {
   return {
     product: $('product').value,
     ratio: ratioPct == null ? 1 : ratioPct / 100,
+    startDate: $('startDate').value ? parseDate($('startDate').value) : null,
     calcYear: num('calcYear'),
     endDate: $('endDate').value ? parseDate($('endDate').value) : null,
     txMargin: num('txMargin') ?? DEFAULT_SETTINGS.txMargin,
@@ -269,6 +317,8 @@ function readSettings() {
 function writeSettings(s) {
   $('product').value = s.product;
   $('ratio').value = Math.round(s.ratio * 10000) / 100;
+  $('startDate').value = s.startDate ? fmtDate(s.startDate) : '';
+  $('endDate').value = s.endDate ? fmtDate(s.endDate) : '';
   $('calcYear').value = s.calcYear ?? '';
   $('txMargin').value = nf.format(s.txMargin);
   $('capital').value = s.capital == null ? '' : nf.format(s.capital);
@@ -281,9 +331,10 @@ function writeSettings(s) {
 
 // ---------- 繪製 ----------
 
-const fmt = (v) => (v < 0 ? `(${nf.format(-v)})` : nf.format(v));
-const pct2 = (v) => (v * 100).toFixed(2) + '%';
-const pct0 = (v) => Math.round(v * 100) + '%';
+// 核心算不出來的指標回傳 null(比例 0、資料全 0、從不虧損…),顯示「—」而不是 NaN
+const fmt = (v) => (!Number.isFinite(v) ? '—' : v < 0 ? `(${nf.format(-v)})` : nf.format(v));
+const pct2 = (v) => (Number.isFinite(v) ? (v * 100).toFixed(2) + '%' : '—');
+const pct0 = (v) => (Number.isFinite(v) ? Math.round(v * 100) + '%' : '—');
 
 function setO(key, text, cls = '') {
   for (const el of document.querySelectorAll(`[data-o="${key}"]`)) {
@@ -293,6 +344,15 @@ function setO(key, text, cls = '') {
 }
 const money = (key, v) => setO(key, fmt(v), v < 0 ? 'neg' : '');
 
+// 原表的日軸是「開始日期 → 今天」(日週期!G8 反推尾日就是 TODAY()),尾端沒資料的日子以 0 計入。
+// 每日浮動區間與 95%單日風險值取的是軸尾往回的窗口,所以軸尾不延伸到今天這 5 格就跟原表差一點。
+function axisEnd() {
+  const now = new Date();
+  let last = -Infinity;
+  for (const s of strategies) for (const [d] of s.rows) if (d > last) last = d;
+  return Math.max(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()), last);
+}
+
 function render() {
   if (!strategies.length) return;
   const empty = strategies.every((s) => !s.allocation);
@@ -300,11 +360,22 @@ function render() {
   $('sheet').hidden = empty;
   if (empty) { lastReport = null; return; }
   const s = readSettings();
-  saveSettings({ ...s, endDate: null });
-  const seriesOpts = {};
-  if ($('startDate').value) seriesOpts.startDate = parseDate($('startDate').value);
+  saveSettings(s);
+  const seriesOpts = { lastDate: axisEnd() };
+  if (s.startDate != null) seriesOpts.startDate = s.startDate;
   const r = computeReport(strategies, s, seriesOpts);
-  if (!r) return;
+  // 起始日晚於資料最後一天時核心回傳 null:給明確提示,不要繼續顯示上一份報表
+  const panels = document.querySelectorAll('#tab-summary .panel');
+  if (!r) {
+    $('rangeWarn').hidden = false;
+    $('sheet').hidden = true;
+    for (const el of panels) el.hidden = true;
+    lastReport = null;
+    return;
+  }
+  $('rangeWarn').hidden = true;
+  $('sheet').hidden = false;
+  for (const el of panels) el.hidden = false;
   lastReport = r;
   if ($('calcYear').value === '') $('calcYear').placeholder = r.calcYear;
   if (!$('endDate').value) $('endDate').placeholder = fmtDate(r.highs.endDate);
@@ -315,9 +386,9 @@ function render() {
     for (const t of ['TX', 'MTX', 'TMF']) money(`${key}.${t}`, k[key][t]);
   }
   setO('winRate', pct2(k.winRate));
-  setO('roa', k.roa.toFixed(2));
-  money('bandAll0', r.band.all[0]); money('bandAll1', r.band.all[1]);
-  money('bandRecent0', r.band.recent[0]); money('bandRecent1', r.band.recent[1]);
+  setO('roa', Number.isFinite(k.roa) ? k.roa.toFixed(2) : '—');
+  money('bandAll0', r.band.all?.[0]); money('bandAll1', r.band.all?.[1]);
+  money('bandRecent0', r.band.recent?.[0]); money('bandRecent1', r.band.recent?.[1]);
   money('var95', r.var95); money('worstDayProd', r.worstDayProd); money('ddProd', r.ddProd);
   money('ddApprox', r.ddApprox); money('strategyLoss', r.strategyLoss);
   setO('maxLossMonthStreak', String(r.maxLossMonthStreak), 'neg');
@@ -334,9 +405,9 @@ function render() {
   setO('marginCheck', pl.marginCheck, pl.marginCheck === 'YES' ? '' : 'neg');
 
   const h = r.highs;
-  const recent5 = h.longByRecency.slice(0, 5).map((g) => g.days);
   setO('latestHigh', h.latestHigh == null ? '' : fmtDate(h.latestHigh));
-  setO('avgStreak', recent5.length ? (recent5.reduce((a, b) => a + b, 0) / recent5.length).toFixed(0) : '0');
+  // DD 40 Day Avg:原表是小數(例 95.2),不要在介面上四捨五入成整天數
+  setO('avgStreak', h.recent5Avg == null ? '' : h.recent5Avg.toFixed(1));
   setO('sinceHigh', String(h.latestHighDays));
   for (let i = 0; i < 3; i++) {
     const g = h.longByLength[i];
@@ -447,11 +518,21 @@ if (window.desktop) {
     first = false;
   };
   $('chooseFolder').addEventListener('click', async () => {
-    if (await window.desktop.chooseFolder()) { first = true; prevFiles = null; await showFolder(); logLines = await window.desktop.readLog(); renderLog(); await loadFolder(); }
+    if (!await window.desktop.chooseFolder()) return;
+    strategies = []; // 換資料夾 = 換一組策略,清掉舊的才不會讓上一個資料夾的權重蓋掉新設定檔的
+    first = true;
+    prevFiles = null;
+    await showFolder();
+    await applyConfigFile(); // 新資料夾有自己的 portfolio-config.json
+    logLines = await window.desktop.readLog();
+    renderLog();
+    await loadFolder();
   });
-  $('reloadFolder').addEventListener('click', loadFolder);
+  // 「重新載入」也重讀設定檔(讓你用記事本改完就能生效);檔案自動重載不讀,避免蓋掉還沒寫進檔案的變更
+  $('reloadFolder').addEventListener('click', async () => { await applyConfigFile(); await loadFolder(); });
   window.desktop.onFolderChanged(loadFolder); // 資料夾內檔案有增減或修改,自動重讀
   showFolder().then(async () => {
+    await applyConfigFile(); // 先帶入設定檔,再載入資料,起始日與權重才是這個資料夾自己的
     logLines = await window.desktop.readLog(); // 先帶入以前的記錄,再接著記新的
     renderLog();
     await loadFolder();

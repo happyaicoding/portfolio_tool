@@ -25,6 +25,7 @@ function defaultFolder() {
 
 const LOG_NAME = 'portfolio-tool.log';
 const SNAP_DIR = 'snapshots';
+const CONFIG_NAME = 'portfolio-config.json';
 
 let folder;
 let win;
@@ -35,8 +36,8 @@ function watchFolder() {
   watcher?.close();
   try {
     watcher = fs.watch(folder, (_event, filename) => {
-      // 記錄檔與截圖資料夾是本程式自己寫的,不能再觸發重新載入(否則會無限循環)
-      if (filename === LOG_NAME || filename === SNAP_DIR) return;
+      // 記錄檔、截圖資料夾與設定檔是本程式自己寫的,不能再觸發重新載入(否則會無限循環)
+      if (filename === LOG_NAME || filename === SNAP_DIR || filename === CONFIG_NAME) return;
       clearTimeout(timer);
       timer = setTimeout(() => win && !win.isDestroyed() && win.webContents.send('folder:changed'), 600);
     });
@@ -67,6 +68,24 @@ ipcMain.handle('folder:read', () => {
       });
   } catch {
     return [];
+  }
+});
+
+// ---------- 設定檔(存在資料夾內,跟著資料夾走) ----------
+
+ipcMain.handle('config:read', () => {
+  try {
+    return fs.readFileSync(path.join(folder, CONFIG_NAME), 'utf8');
+  } catch {
+    return null; // 還沒存過 = 用預設值,不是錯誤
+  }
+});
+ipcMain.handle('config:write', (_e, text) => {
+  try {
+    fs.writeFileSync(path.join(folder, CONFIG_NAME), String(text), 'utf8');
+    return true;
+  } catch {
+    return false; // 資料夾唯讀或離線時讓介面知道寫不進去
   }
 });
 
