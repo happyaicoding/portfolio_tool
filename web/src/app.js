@@ -1,6 +1,7 @@
 import { computeReport, strategyMonthly, parseDate, fmtDate, DEFAULT_SETTINGS, PRODUCTS, extent } from './core.js';
 import { loadFile } from './parse.js';
 import { CONFIG_NAME, parseConfig, toConfigText, settingsFromPlain, settingsToPlain, weightsFromPlain } from './config.js';
+import { THEME_KEY, DEFAULT_THEME, normalizeTheme, resolveTheme, applyTheme, forceLightForCapture } from './theme.js';
 import {
   REGISTRY_NAME, fingerprints, diffFingerprints, describeDiff, parseRegistry, serializeRegistry,
   checkName, checkNote, metricsOf, rankMetrics, diffValue, METRICS,
@@ -65,6 +66,37 @@ async function applyConfigFile(entry = pfEntry) {
   lastConfigText = toConfigText(mergedSettings(), config.weights);
   setConfigWarn(config.error ? `設定檔讀不到:${config.error},這次以預設值計算。` : '');
   writeSettings(mergedSettings());
+}
+
+// ---------- 外觀主題(全域,不跟著資料夾走) ----------
+
+const prefersDark = () => !!window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+let themeMode = DEFAULT_THEME;
+
+function paintTheme() {
+  const eff = applyTheme(document.documentElement, themeMode, prefersDark());
+  $('theme').value = themeMode;
+  $('theme').title = `底色主題:${themeMode === 'auto' ? `跟隨系統(目前${eff === 'dark' ? '深色' : '淺色'})` : eff === 'dark' ? '深色' : '淺色'}`;
+  return eff;
+}
+function saveTheme(mode) {
+  if (window.desktop?.setTheme) { window.desktop.setTheme(mode); return; }
+  try { localStorage.setItem(THEME_KEY, mode); } catch { /* 略過 */ }
+}
+function setTheme(mode, { persist = true } = {}) {
+  themeMode = normalizeTheme(mode);
+  paintTheme();
+  if (persist) saveTheme(themeMode);
+}
+async function loadTheme() {
+  let m = null;
+  if (window.desktop?.getTheme) m = await window.desktop.getTheme();
+  else { try { m = localStorage.getItem(THEME_KEY); } catch { m = null; } }
+  setTheme(m || DEFAULT_THEME, { persist: false });
+  // 「跟隨系統」時,使用者在 Windows 裡改設定要立刻跟上
+  window.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener?.('change', () => {
+    if (themeMode === 'auto') paintTheme();
+  });
 }
 
 // ---------- 讀檔 ----------
@@ -216,11 +248,18 @@ async function takeSnapshot() {
   if (!window.desktop) return;
   if (!lastReport) { logEvent('錯誤', '截圖失敗:目前沒有可截圖的績效(尚未載入資料,或權重全為 0)'); return; }
   switchTab('summary');
+  // 截圖一律白底(方便貼進 Excel 或報表模板),截完一定還原成使用者選的主題
+  const restoreTheme = forceLightForCapture(document.documentElement, themeMode, prefersDark());
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   const b = $('sheet').getBoundingClientRect();
-  const res = await window.desktop.saveSnapshot(pfEntry, {
-    x: b.left + window.scrollX, y: b.top + window.scrollY, width: Math.ceil(b.width), height: Math.ceil(b.height),
-  });
+  let res;
+  try {
+    res = await window.desktop.saveSnapshot(pfEntry, {
+      x: b.left + window.scrollX, y: b.top + window.scrollY, width: Math.ceil(b.width), height: Math.ceil(b.height),
+    });
+  } finally {
+    restoreTheme();
+  }
   if (res.error) { logEvent('錯誤', `截圖失敗:${res.error}`); return; }
   const r = lastReport;
   const m = (v) => (v < 0 ? `(${nf.format(-v)})` : nf.format(v));
@@ -784,6 +823,8 @@ function esc(s) {
 // ---------- 事件 ----------
 
 buildSheet();
+paintTheme(); // 先依系統設定上底色,再非同步取回使用者存過的主題(桌面版要問 IPC)
+loadTheme();
 if (!window.desktop) {
   try { logLines = JSON.parse(localStorage.getItem(LOGKEY)) || []; } catch { logLines = []; }
   $('logHint').textContent = '網站版的記錄只保存在這個瀏覽器裡,不會寫成檔案;截圖功能僅桌面版提供。';
@@ -802,6 +843,7 @@ $('app').addEventListener('input', (e) => {
 });
 $('weightsOne').addEventListener('click', () => setAllWeights(1));
 $('weightsZero').addEventListener('click', () => setAllWeights(0));
+$('theme').addEventListener('change', (e) => setTheme(e.target.value));
 for (const btn of document.querySelectorAll('.tabs button[data-tab]')) btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 $('snapBtn').addEventListener('click', takeSnapshot);
 $('pick').addEventListener('click', () => $('file').click());

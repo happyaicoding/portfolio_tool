@@ -1,7 +1,7 @@
 // 啟動桌面版(開發模式或打包後的 exe),上傳原 .xlsm,檢查畫面數字並截圖。
 // 用法:node tests/electron-smoke.mjs [exe 路徑]   (不給路徑 = 用 node_modules 的 electron 開 .)
 import { _electron as electron } from 'playwright';
-import { readdirSync, copyFileSync, mkdirSync } from 'node:fs';
+import { readdirSync, copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,8 +12,12 @@ const xlsm = readdirSync(root).find((f) => f.endsWith('.xlsm'));
 const input = path.join(os.tmpdir(), 'portfolio-smoke.xlsm');
 copyFileSync(path.join(root, xlsm), input);
 
+// 工作區固定成空的暫存目錄:這支測的是「上傳 .xlsm」那一條路。
+// 留空的話開發預設(mock-data)會在啟動時自動載入第一個投組,把剛上傳的資料蓋掉。
+const ws = mkdtempSync(path.join(os.tmpdir(), 'portfolio-empty-'));
+const env = { ...process.env, PORTFOLIO_DATA_DIR: ws };
 const exe = process.argv[2];
-const app = await electron.launch(exe ? { executablePath: path.resolve(exe) } : { args: [root] });
+const app = await electron.launch(exe ? { executablePath: path.resolve(exe), env } : { args: [root], env });
 let fail = 0;
 try {
   const win = await app.firstWindow();
@@ -43,6 +47,7 @@ try {
   await win.screenshot({ path: path.join(root, 'artifacts', 'desktop.png'), fullPage: true });
 } finally {
   await app.close();
+  try { rmSync(ws, { recursive: true, force: true }); } catch { /* Windows 偶爾會晚一點釋放 */ }
 }
 console.log(fail ? `\n${fail} 項失敗` : '\n桌面版冒煙測試通過');
 process.exit(fail ? 1 : 0);

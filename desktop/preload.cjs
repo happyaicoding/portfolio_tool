@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('desktop', {
   copyLooseTo: (sub) => ipcRenderer.invoke('ws:copyLooseTo', sub),
   deleteLoose: (sub, expected) => ipcRenderer.invoke('ws:deleteLoose', [sub, expected]),
   pickFolder: () => ipcRenderer.invoke('ws:pickFolder'),
+  // 外觀主題(全域,不跟著資料夾走)
+  getTheme: () => ipcRenderer.invoke('theme:get'),
+  setTheme: (mode) => ipcRenderer.invoke('theme:set', mode),
   // 投資組合
   activate: (entry) => ipcRenderer.invoke('pf:activate', entry),
   exists: (entry) => ipcRenderer.invoke('pf:exists', entry),

@@ -2,6 +2,7 @@
 // 這份測的是「真資料規模」的投組流程,跟 portfolios-smoke(合成小 CSV)互補。
 // 用法:node tests/mock-smoke.mjs [exe 路徑]
 import { _electron as electron } from 'playwright';
+import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -62,6 +63,40 @@ try {
   const cellsAfter = await Promise.all((await row0b.$$('td')).map((t) => t.textContent()));
   check('差值模式基準欄維持自己的數字', cellsAfter[baseIdx] === cellsBefore[baseIdx], `${cellsBefore[baseIdx]} → ${cellsAfter[baseIdx]}`);
   check('差值模式其他欄帶正負號', /^[+-][0-9,]/.test((cellsAfter[1 - baseIdx] || '').trim()), cellsAfter[1 - baseIdx]);
+
+  // ---- 主題切換(下拉在標題列右側,任何分頁都點得到;總表底色要跟著變)----
+  const themeAttr = () => win.evaluate(() => document.documentElement.dataset.theme);
+  const paperBg = () => win.evaluate(() => getComputedStyle(document.querySelector('.sheet')).backgroundColor);
+  await win.selectOption('#theme', 'dark');
+  check('切深色後 html data-theme=dark', (await themeAttr()) === 'dark', await themeAttr());
+  const darkPaper = await paperBg();
+  check('深色下總表不再是白紙', darkPaper !== 'rgb(255, 255, 255)', darkPaper);
+  await win.selectOption('#theme', 'light');
+  check('切回淺色總表變白紙', (await paperBg()) === 'rgb(255, 255, 255)', await paperBg());
+
+  // 截圖要維持白底:深色模式下按截圖,期間要真的出現 light,而且最後要回到 dark
+  await win.selectOption('#theme', 'dark');
+  await win.click('.tabs button[data-tab="summary"]');
+  // 用 MutationObserver 記錄 data-theme 的整個序列,否則「還原後是 dark」會被
+  // 還沒切換就通過的輪詢假綠掉
+  await win.evaluate(() => {
+    window.__seen = [document.documentElement.dataset.theme];
+    new MutationObserver(() => window.__seen.push(document.documentElement.dataset.theme))
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  });
+  await win.click('#snapBtn');
+  let cycled = true;
+  try {
+    await win.waitForFunction(() => window.__seen.includes('light') && window.__seen.at(-1) === 'dark', null, { timeout: 20000 });
+  } catch { cycled = false; }
+  check('截圖期間轉成白底、截完回到深色', cycled, await win.evaluate(() => window.__seen.join('→')));
+  const snapDir = path.join(ws, '龜烏20', 'snapshots');
+  const snaps = existsSync(snapDir) ? readdirSync(snapDir) : [];
+  check('截圖寫進該投組自己的 snapshots 資料夾', snaps.length >= 1, snaps.join(','));
+
+  // 還原成跟隨系統,不要把測試用的主題留在這台電腦的設定裡
+  await win.selectOption('#theme', 'auto');
+  check('切回跟隨系統', (await win.inputValue('#theme')) === 'auto');
 
   check('沒有 console 錯誤', errors.length === 0, errors.join(' | '));
 } finally {

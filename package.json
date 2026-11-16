@@ -7,12 +7,12 @@
   "main": "desktop/main.cjs",
   "scripts": {
     "start": "node tools/serve.mjs",
-    "test": "node tests/parse.test.mjs && node tests/config.test.mjs && node tests/portfolios.test.mjs && node tests/core.test.mjs && node tests/xlsm.test.mjs && node tests/excel-oracle.test.mjs",
+    "test": "node tests/parse.test.mjs && node tests/config.test.mjs && node tests/theme.test.mjs && node tests/portfolios.test.mjs && node tests/core.test.mjs && node tests/xlsm.test.mjs && node tests/excel-oracle.test.mjs",
     "check-csv": "node tools/check-csv.mjs",
     "desktop": "electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win portable --x64",
-    "smoke": "node tests/electron-smoke.mjs && node tests/folder-smoke.mjs && node tests/portfolios-smoke.mjs && node tests/mock-smoke.mjs",
+    "smoke": "node tests/electron-smoke.mjs && node tests/folder-smoke.mjs && node tests/portfolios-smoke.mjs && node tests/mock-smoke.mjs && node tests/theme-contrast.mjs",
     "export-mock": "node tools/export-mock.mjs"
   },
   "devDependencies": {

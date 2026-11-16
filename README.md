@@ -12,10 +12,11 @@
 - `web/src/parse.js` CSV / xlsx 解析,無相依。
 - `web/src/config.js` 資料夾設定檔(`portfolio-config.json`)的解析與寫出,純函式、無 DOM,Node 可直測。
 - `web/src/portfolios.js` 投資組合清單(`portfolios.json`)、策略指紋與比較表 15 列指標的定義,同樣純函式、無 DOM。
+- `web/src/theme.js` 底色主題的解析與套用(`auto/light/dark` → `<html data-theme>`),純函式;顏色本體全在 `styles.css` 的變數裡。
 - `web/src/app.js`、`charts.js`、`index.html` 介面。`charts.js` 的 `createHeatmap` 畫「逐月盈虧熱力圖」(各策略 × 年份,點年份展開到月;資料來自 `core.js` 的 `strategyMonthly`)。
 - `tools/serve.mjs` 網站版本地伺服器(零相依);`tools/check-csv.mjs` 用 CSV 重算並逐格對照參考 `.xlsm`(見下方「更新資料後自己驗數字」);`tools/export-mock.mjs` 從一份 `.xlsm` 產生 `mock-data/`(見下方「Mock 資料」)。
-- `tests/` 以原 Excel 快取值驗證:`npm test` 依序跑 `parse.test.mjs`(合成 CSV)、`config.test.mjs`(設定檔解析/寫出)、`portfolios.test.mjs`(投組清單、指紋、比較表指標)、`core.test.mjs`(合成資料的邊界回歸,不需要 Excel)、`xlsm.test.mjs`(完整流程)、`excel-oracle.test.mjs`(逐格對「總表」快取值)。基準檔是專案根目錄那份 `.xlsm`(20 策略版),已 commit,不用另外放置;要換別份就當參數傳路徑。
-- `npm run smoke` 是 Electron 端的實際操作測試,四支:`electron-smoke`(啟動後上傳 .xlsm 看畫面數字)、`folder-smoke`(資料夾自動讀取、記錄檔、截圖)、`portfolios-smoke`(投組新增、搬檔、指紋差異、移除)、`mock-smoke`(用 `mock-data/` 跑真資料規模的切換與比較表)。前兩支與第三支都在暫存資料夾裡跑,不會動到任何真實資料;`mock-smoke` 讀的是 repo 內的 `mock-data/`。
+- `tests/` 以原 Excel 快取值驗證:`npm test` 依序跑 `parse.test.mjs`(合成 CSV)、`config.test.mjs`(設定檔解析/寫出)、`theme.test.mjs`(主題解析與截圖白底還原)、`portfolios.test.mjs`(投組清單、指紋、比較表指標)、`core.test.mjs`(合成資料的邊界回歸,不需要 Excel)、`xlsm.test.mjs`(完整流程)、`excel-oracle.test.mjs`(逐格對「總表」快取值)。基準檔是專案根目錄那份 `.xlsm`(20 策略版),已 commit,不用另外放置;要換別份就當參數傳路徑。
+- `npm run smoke` 是 Electron 端的實際操作測試,五支:`electron-smoke`(啟動後上傳 .xlsm 看畫面數字)、`folder-smoke`(資料夾自動讀取、記錄檔、截圖)、`portfolios-smoke`(投組新增、搬檔、指紋差異、移除)、`mock-smoke`(用 `mock-data/` 跑真資料規模的切換與比較表)、`theme-contrast`(深淺兩套主題下掃總表與比較表每個有字的元素,算 WCAG 對比,低於 4.5 就失敗)。前四支的檔案操作都在暫存資料夾裡跑,不會動到任何真實資料;`mock-smoke` 與 `theme-contrast` 讀的是 repo 內的 `mock-data/`。
 
 ## 與 Excel 的已知差異
 - 日軸尾日:原表把日序列延伸到「更新當天」,多出來的未來日損益為 0,會影響每日浮動區間、95%單日風險值與「近三年」窗口。本工具照同一條規則做(軸尾 = 今天與資料最後日期的較晚者),所以**兩邊要同一天看才對得起來**;`tests/` 是從 `.xlsm` 的 `日週期!G8` 反推軸尾,不會因為改天跑就假紅。
@@ -39,6 +40,13 @@
 - CSV 編碼自動判斷(UTF-8,不合法時改用 Big5);分隔符號支援逗號、Tab、分號。策略數量不固定,14 條、20 條都直接吃。
 - 第一次使用請到「設定 → 計算設定」填「起始日」,對應原表的 `文字檔 B1`;CSV 檔內沒有這個資訊,留空白會把開始日期之前的資料一起算進去。
 - 網站版受瀏覽器限制,無法自動讀資料夾,仍需手動選檔或拖曳。
+
+## 外觀(底色主題)
+- 切換下拉在**標題列右上角**,三個選項:跟隨系統(預設)/ 淺色 / 深色;滑鼠停在上面會顯示目前實際生效的是哪一套。「跟隨系統」讀的是系統的偏好,你在 Windows 改淺/深會立刻跟上,不用重開程式。
+- 主題是**全域**設定:網站版存瀏覽器(localStorage `portfolio_tool.theme.v1`),桌面版存 `userData` 的 `config.json`(跟「選過的資料夾」同一個檔)。所以換資料夾、換投資組合都不會連顏色一起換。
+- 深色模式把仿 Excel 總表那一整塊也一起換色(紙色、儲存格框線、黃=必須輸入、橘=小計、金=標題全部走 CSS 變數),所以不會出現「四周都暗了、只有總表一張白紙」的情況。代價是深色下的總表外觀不再跟 Excel 原表一模一樣 —— 要對照原表就切回淺色。
+- 「📷 截圖並記錄」存出的 PNG **一律白底**:截取前暫時把主題蓋成淺色,截完一定還原(所以按下去那一瞬間畫面會閃一下白)。這樣截圖可以直接貼進報表或 Excel,不會拖著一張深色圖。
+- 主題只影響顏色,不動任何計算數字。
 
 ## 設定檔:`portfolio-config.json`(桌面版)
 - 桌面版把「計算設定 + 策略權重」寫成資料夾內的 `portfolio-config.json`(JSON,可用記事本改),所以設定是**跟著資料夾走**:換資料夾 = 換一組設定,把整個資料夾拷到別台電腦也帶著走。網站版沒有檔案權限,仍存瀏覽器 localStorage。

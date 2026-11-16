@@ -1,17 +1,30 @@
 :root {
   --bg: #f6f7f9; --card: #fff; --ink: #1c2330; --muted: #667085; --line: #e3e7ee;
-  --accent: #b7791f; --pos: #0e8a5f; --neg: #c0392b; --pos-bg: 14, 138, 95; --neg-bg: 192, 57, 43;
+  /* 綠字在白底要撐得住 13px 的字級:#0e8a5f 只有 4.36(比較表「最佳」那格),壓深到 5.4 */
+  --accent: #b7791f; --pos: #0a6d4b; --neg: #c0392b; --pos-bg: 14, 138, 95; --neg-bg: 192, 57, 43;
+  /* 仿 Excel 總表用的「紙」與 Excel 內建配色。深色模式要整套換,所以一律走變數,
+     不要在規則裡寫死 #fff/#ffff00 那種色值。 */
+  --paper: #fff; --paper-ink: #111; --grid-line: #000; --grid-line-soft: #d9d9d9;
+  --xl-hl: #fff2cc; --xl-peach: #f8cbad; --xl-gold: #ffd966; --xl-input: #ffff00;
+  /* 負數紅:Excel 的純紅 #f00 在白底只有 4.0、淡黃小計底只有 3.58(低於 AA 4.5),
+     改用同色相的深紅,深淺兩套都過得去。 */
+  --xl-neg: #c0392b; --xl-note: #595959;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #12151b; --card: #1a1f28; --ink: #e8ecf3; --muted: #98a2b3; --line: #2a313d;
-    --accent: #e0a63c; --pos: #3ccf91; --neg: #ff7a6b; --pos-bg: 60, 207, 145; --neg-bg: 255, 122, 107;
-  }
+/* 主題一律由 <html data-theme> 決定(web/src/theme.js 依「跟隨系統/強制淺/強制深」寫入)。
+   不再用 @media (prefers-color-scheme) 直接改值,否則兩份深色色表會各改各的、慢慢漂移。 */
+:root[data-theme="dark"] {
+  --bg: #12151b; --card: #1a1f28; --ink: #e8ecf3; --muted: #98a2b3; --line: #2a313d;
+  --accent: #e0a63c; --pos: #3ccf91; --neg: #ff7a6b; --pos-bg: 60, 207, 145; --neg-bg: 255, 122, 107;
+  --paper: #1a1f28; --paper-ink: #e8ecf3; --grid-line: #5a6472; --grid-line-soft: #39424f;
+  --xl-hl: #3a3520; --xl-peach: #4a3527; --xl-gold: #5c4d1c; --xl-input: #4f4f1b;
+  --xl-neg: #ff7a6b; --xl-note: #9aa3b2;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 system-ui, "PingFang TC", "Microsoft JhengHei", sans-serif; }
 header.top, main, footer { max-width: 1320px; margin: 0 auto; padding: 0 16px; }
 header.top { padding-top: 28px; }
+.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.theme-pick { flex: none; margin-top: 4px; } /* 標題列右側的主題下拉:不佔寬、不跟著換行 */
 h1 { font-size: 24px; margin: 0; }
 h2 { font-size: 17px; margin: 0 0 12px; }
 .sub { color: var(--muted); margin: 4px 0 20px; }
@@ -56,37 +69,37 @@ th { color: var(--muted); font-weight: 500; font-size: 13px; }
 .folder .actions { display: flex; gap: 12px; }
 .folder span { color: var(--muted); font-size: 13px; flex-basis: 100%; }
 
-/* ---------- 仿 Excel 總表(固定淺色,維持與 Excel 相近的外觀) ---------- */
+/* ---------- 仿 Excel 總表(配色走變數,深淺兩套都由 data-theme 決定) ---------- */
 /* 左欄封頂 480px:原本的 430px 放不下 t2/t4(自然寬度約 420~460px),表格會溢出軌道、
    蓋到右欄月矩陣;但用 max-content 又把左欄撐到 500px 以上,換成右欄被擠到要橫向捲。
    配合「長表頭可換行 + 口數輸入格不再固定 96px」,480px 裝得下左欄全部六張表。 */
-.sheet { display: grid; grid-template-columns: fit-content(480px) minmax(0, 1fr); gap: 24px; align-items: start; background: #fff; color: #111; border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px; }
+.sheet { display: grid; grid-template-columns: fit-content(480px) minmax(0, 1fr); gap: 24px; align-items: start; background: var(--paper); color: var(--paper-ink); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px; }
 .sheet .left, .sheet .right { display: flex; flex-direction: column; gap: 14px; min-width: 0; overflow-x: auto; } /* 真的放不下時各自捲動,不重疊 */
-table.xl { border-collapse: collapse; width: 100%; font-size: 13px; line-height: 1.25; color: #111; }
-table.xl th, table.xl td { border: 1px solid #000; padding: 2px 6px; text-align: center; font-weight: 400; background: #fff; }
+table.xl { border-collapse: collapse; width: 100%; font-size: 13px; line-height: 1.25; color: var(--paper-ink); }
+table.xl th, table.xl td { border: 1px solid var(--grid-line); padding: 2px 6px; text-align: center; font-weight: 400; background: var(--paper); }
 table.xl td { white-space: nowrap; } /* 數字不折行;表頭(95%單日風險值、年度最多虧損月份…)允許換行 */
 table.xl th.lbl, table.xl th.l { text-align: left; }
-table.xl th.blank { background: #fff; } /* 左上角空白格保留框線,表格才是完整矩形 */
-table.xl .neg { color: #f00; }
-table.xl tr.hl th, table.xl tr.hl td { background: #fff2cc; }
-table.xl tr.peach th, table.xl tr.peach td { background: #f8cbad; font-weight: 600; }
-table.xl .gold { background: #ffd966; }
-table.xl td.in, table.xl td.in2 { background: #ffff00; padding: 0; }
-.xl td.in input, .xl td.in2 input, .xl td.in select { width: 100%; border: 0; background: transparent; text-align: center; font: inherit; font-weight: 700; color: #111; padding: 2px 4px; min-width: 0; }
-.xl td.in2 { display: table-cell; background: #fff2cc; }
+table.xl th.blank { background: var(--paper); } /* 左上角空白格保留框線,表格才是完整矩形 */
+table.xl .neg { color: var(--xl-neg); }
+table.xl tr.hl th, table.xl tr.hl td { background: var(--xl-hl); }
+table.xl tr.peach th, table.xl tr.peach td { background: var(--xl-peach); font-weight: 600; }
+table.xl .gold { background: var(--xl-gold); }
+table.xl td.in, table.xl td.in2 { background: var(--xl-input); padding: 0; }
+.xl td.in input, .xl td.in2 input, .xl td.in select { width: 100%; border: 0; background: transparent; text-align: center; font: inherit; font-weight: 700; color: var(--paper-ink); padding: 2px 4px; min-width: 0; }
+.xl td.in2 { display: table-cell; background: var(--xl-hl); }
 .xl td.in2 input { width: calc(100% - 14px); }
 .xl td.in2 .u { font-size: 12px; }
-.xl td.prod { background: #ffff00; }
+.xl td.prod { background: var(--xl-input); }
 table.xl.t1 th.lbl, table.xl.t4 th.lbl { width: 38%; }
 table.xl.matrix th.yr { font-weight: 700; }
-table.xl.matrix th.yel { background: #ffff00; }
+table.xl.matrix th.yel { background: var(--xl-input); }
 table.xl.matrix td { text-align: right; padding: 2px 6px; }
-table.xl.matrix tr.sum th, table.xl.matrix tr.sum td { border-top: 2px solid #000; }
-table.xl.totals td.big { font-weight: 600; background: #fff; }
-table.xl.totals td.big.neg { background: #fff2cc; }
-.xlchart { border: 1px solid #d9d9d9; padding: 8px 10px; background: #fff; }
-.xlchart .title { text-align: center; font-weight: 700; font-size: 15px; color: #595959; margin-bottom: 4px; }
-.xlchart .axis { fill: #595959; }
+table.xl.matrix tr.sum th, table.xl.matrix tr.sum td { border-top: 2px solid var(--grid-line); }
+table.xl.totals td.big { font-weight: 600; background: var(--paper); }
+table.xl.totals td.big.neg { background: var(--xl-hl); }
+.xlchart { border: 1px solid var(--grid-line-soft); padding: 8px 10px; background: var(--paper); }
+.xlchart .title { text-align: center; font-weight: 700; font-size: 15px; color: var(--xl-note); margin-bottom: 4px; }
+.xlchart .axis { fill: var(--xl-note); }
 /* 1100px 以下改成一欄:左右並排需要約 480 + 24 + 600(月矩陣 8~9 個年份欄)的空間,
    再窄就讓月矩陣整排換到下方取全寬,而不是被壓到要橫向捲。 */
 @media (max-width: 1100px) { .sheet { grid-template-columns: 1fr; } }
@@ -101,13 +114,13 @@ table.weights th:first-child, table.weights td:first-child { text-align: left; }
 #sheet[hidden] { display: none; }
 #weightWarn { margin-top: 16px; }
 
-/* 外觀對齊 Excel:標題/列名為黑字、年份粗體;數字欄置中且不顯示上下箭頭 */
-table.xl th { color: #111; font-size: 13px; }
+/* 外觀對齊 Excel:標題/列名為紙上的深字(走 --paper-ink,深色模式自動變亮)、數字欄置中且不顯示上下箭頭 */
+table.xl th { color: var(--paper-ink); font-size: 13px; }
 table.xl.matrix th.yr { font-weight: 700; }
 .xl td.in input { text-align: center; }
 .xl input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .xl input[type=number]::-webkit-inner-spin-button, .xl input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.xl input::placeholder { color: #111; opacity: .6; }
+.xl input::placeholder { color: var(--paper-ink); opacity: .45; }
 
 /* 記錄分頁、截圖按鈕 */
 .tabs .snap { margin-left: auto; align-self: center; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; font-size: 14px; }

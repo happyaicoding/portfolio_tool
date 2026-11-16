@@ -92,7 +92,7 @@ export function barChart(el, years, ret, dd, { height = 260 } = {}) {
       `<text class="axis" x="${cx}" y="${height - 6}" text-anchor="middle">${yr}</text>`;
   }).join('');
   el.innerHTML = `<svg viewBox="0 0 ${W} ${height}" role="img">
-    ${ticks.map((t) => `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="#d9d9d9"/><text class="axis" x="${padL - 6}" y="${y(t) + 4}" text-anchor="end">${t < 0 ? `(${nf.format(-t)})` : nf.format(t)}</text>`).join('')}
+    ${ticks.map((t) => `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="currentColor" opacity=".18"/><text class="axis" x="${padL - 6}" y="${y(t) + 4}" text-anchor="end">${t < 0 ? `(${nf.format(-t)})` : nf.format(t)}</text>`).join('')}
     ${bars}
   </svg>`;
 }

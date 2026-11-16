@@ -176,6 +176,18 @@ ipcMain.handle('ws:pickFolder', async () => {
   return dirAuthorized(r.filePaths[0]);
 });
 
+// ---------- 外觀主題(全域:存 userData 的 config.json,不跟著資料夾/投資組合走) ----------
+
+ipcMain.handle('theme:get', () => readConfig().theme ?? null);
+ipcMain.handle('theme:set', (_e, mode) => {
+  try {
+    writeConfig({ ...readConfig(), theme: String(mode) });
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 // ---------- 投資組合層級(每個投組一個資料夾) ----------
 
 ipcMain.handle('pf:activate', (_e, entry) => {

@@ -38,6 +38,8 @@ jobs:
         run: node tests/portfolios-smoke.mjs dist/win-unpacked/PortfolioTool.exe
       - name: mock 工作區兩個投組的切換與比較表(真資料規模)
         run: node tests/mock-smoke.mjs dist/win-unpacked/PortfolioTool.exe
+      - name: 深淺主題下的文字對比度(字被底色吃掉就失敗)
+        run: node tests/theme-contrast.mjs dist/win-unpacked/PortfolioTool.exe
       - uses: actions/upload-artifact@v4
         with:
           name: PortfolioTool-portable
