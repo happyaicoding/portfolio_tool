@@ -12,7 +12,8 @@
     "desktop": "electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win portable --x64",
-    "smoke": "node tests/electron-smoke.mjs && node tests/folder-smoke.mjs && node tests/portfolios-smoke.mjs"
+    "smoke": "node tests/electron-smoke.mjs && node tests/folder-smoke.mjs && node tests/portfolios-smoke.mjs && node tests/mock-smoke.mjs",
+    "export-mock": "node tools/export-mock.mjs"
   },
   "devDependencies": {
     "electron": "^33.0.0",

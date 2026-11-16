@@ -36,6 +36,8 @@ jobs:
         run: node tests/folder-smoke.mjs dist/win-unpacked/PortfolioTool.exe
       - name: 投資組合版本(新增/搬檔/指紋差異/移除)
         run: node tests/portfolios-smoke.mjs dist/win-unpacked/PortfolioTool.exe
+      - name: mock 工作區兩個投組的切換與比較表(真資料規模)
+        run: node tests/mock-smoke.mjs dist/win-unpacked/PortfolioTool.exe
       - uses: actions/upload-artifact@v4
         with:
           name: PortfolioTool-portable

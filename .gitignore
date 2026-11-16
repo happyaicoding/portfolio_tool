@@ -4,3 +4,6 @@ artifacts/
 tests/fixture.json
 *.exe
 data/
+# 冒煙測試會在 mock 資料夾留下執行記錄,不進版控
+mock-data/**/portfolio-tool.log
+mock-data/**/snapshots/
