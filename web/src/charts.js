@@ -96,3 +96,81 @@ export function barChart(el, years, ret, dd, { height = 260 } = {}) {
     ${bars}
   </svg>`;
 }
+
+/**
+ * 逐月盈虧熱力圖:欄 = 各策略(最右為合計),列 = 年份,點年份列展開/收合到月。
+ * data = strategyMonthly() 的結果。回傳 { update(data) },狀態(展開、年份範圍、色階)跨重繪保留。
+ */
+export function createHeatmap(el, ctl) {
+  const { y0, y1, yall, expandAll, collapseAll, scaleSel, showNum } = ctl;
+  const open = new Set();
+  let data = { years: [], cols: [] };
+  let lo = null, hi = null;
+
+  const absMax = (arr) => Math.max(0, ...arr.filter((v) => v != null).map(Math.abs));
+  const yearVal = (k, c) => {
+    const v = k.matrix.map((r) => r[c]).filter((x) => x != null);
+    return v.length ? v.reduce((a, b) => a + b, 0) : null;
+  };
+  const color = (v, max) => {
+    if (v == null) return 'transparent';
+    if (v === 0 || max === 0) return 'rgba(128,128,128,.12)';
+    const a = 0.12 + 0.88 * Math.sqrt(Math.min(1, Math.abs(v) / max));
+    return `rgba(var(${v > 0 ? '--pos-bg' : '--neg-bg'}), ${a.toFixed(3)})`;
+  };
+
+  function draw() {
+    const { years, cols } = data;
+    if (!years.length) { el.innerHTML = ''; return; }
+    const shown = years.map((y, c) => [y, c]).filter(([y]) => y >= lo && y <= hi);
+    const strat = cols.filter((k) => !k.total);
+    const yMax = cols.map((k) => absMax(shown.map(([, c]) => yearVal(k, c))));
+    const mMax = cols.map((k) => absMax(shown.flatMap(([, c]) => k.matrix.map((r) => r[c]))));
+    const gY = Math.max(0, ...strat.map((k) => yMax[cols.indexOf(k)]));
+    const gM = Math.max(0, ...strat.map((k) => mMax[cols.indexOf(k)]));
+    const shared = scaleSel.value === 'shared';
+    const num = showNum.checked;
+    const cell = (k, ci, v, isYear, label) => {
+      const max = k.total || !shared ? (isYear ? yMax[ci] : mMax[ci]) : (isYear ? gY : gM);
+      return `<td class="${k.total ? 'tot' : ''}" style="background:${color(v, max)}" title="${label}  ${k.name}  ${v == null ? '無資料' : nf.format(v)}">${num && v != null ? nf.format(v) : ''}</td>`;
+    };
+    let h = `<thead><tr><th>年份</th>${cols.map((k) => `<th class="${k.total ? 'tot' : ''}" title="${k.name}">${k.name}</th>`).join('')}</tr></thead><tbody>`;
+    for (const [y, c] of shown) {
+      const isOpen = open.has(y);
+      h += `<tr class="y" data-y="${y}"><th>${isOpen ? '▼' : '▶'} ${y}</th>${cols.map((k, ci) => cell(k, ci, yearVal(k, c), true, String(y))).join('')}</tr>`;
+      if (!isOpen) continue;
+      for (let m = 0; m < 12; m++) {
+        if (cols.every((k) => k.matrix[m][c] == null)) continue;
+        h += `<tr class="m"><th>${m + 1} 月</th>${cols.map((k, ci) => cell(k, ci, k.matrix[m][c], false, `${y}-${String(m + 1).padStart(2, '0')}`)).join('')}</tr>`;
+      }
+    }
+    el.innerHTML = h + '</tbody>';
+  }
+
+  function fillSelects() {
+    const ys = data.years;
+    for (const sel of [y0, y1]) {
+      sel.innerHTML = ys.map((y) => `<option value="${y}">${y}</option>`).join('');
+    }
+    if (lo == null || lo < ys[0] || lo > ys[ys.length - 1]) lo = ys[0];
+    if (hi == null || hi > ys[ys.length - 1] || hi < ys[0]) hi = ys[ys.length - 1];
+    y0.value = lo; y1.value = hi;
+  }
+
+  el.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr.y');
+    if (!tr) return;
+    const y = +tr.dataset.y;
+    if (open.has(y)) open.delete(y); else open.add(y);
+    draw();
+  });
+  y0.addEventListener('change', () => { lo = +y0.value; if (lo > hi) { hi = lo; y1.value = hi; } draw(); });
+  y1.addEventListener('change', () => { hi = +y1.value; if (hi < lo) { lo = hi; y0.value = lo; } draw(); });
+  yall.addEventListener('click', () => { lo = data.years[0]; hi = data.years[data.years.length - 1]; y0.value = lo; y1.value = hi; draw(); });
+  expandAll.addEventListener('click', () => { data.years.forEach((y) => open.add(y)); draw(); });
+  collapseAll.addEventListener('click', () => { open.clear(); draw(); });
+  scaleSel.addEventListener('change', draw);
+  showNum.addEventListener('change', draw);
+
+  return { update(d) { data = d; fillSelects(); draw(); } };
+}

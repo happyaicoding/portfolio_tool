@@ -1,9 +1,13 @@
-import { computeReport, parseDate, fmtDate, DEFAULT_SETTINGS, PRODUCTS } from './core.js';
+import { computeReport, strategyMonthly, parseDate, fmtDate, DEFAULT_SETTINGS, PRODUCTS } from './core.js';
 import { loadFile } from './parse.js';
-import { lineChart, barChart } from './charts.js';
+import { lineChart, barChart, createHeatmap } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
+const heatmap = createHeatmap($('heatmap'), {
+  y0: $('hmY0'), y1: $('hmY1'), yall: $('hmAll'), expandAll: $('hmExpand'),
+  collapseAll: $('hmCollapse'), scaleSel: $('hmScale'), showNum: $('hmNum'),
+});
 
 let strategies = []; // [{ name, rows, allocation }]
 let lastReport = null; // 最近一次 computeReport 的結果(截圖記錄用)
@@ -351,6 +355,9 @@ function render() {
   $('totals').innerHTML =
     `<tr><th>總獲利:</th><td class="big">${fmt(k.totalProfit)}</td><th class="gold">最大策略虧損:</th><td class="big neg">${fmt(r.strategyLoss)}</td></tr>`;
   barChart($('chartAnnual'), r.years, r.annualRet, r.annualDD);
+
+  // 逐月盈虧熱力圖(各策略)
+  heatmap.update(strategyMonthly(strategies, seriesOpts));
 
   // 資金曲線
   const cum = new Float64Array(r.daily.length);

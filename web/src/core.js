@@ -181,6 +181,42 @@ export function monthlyMatrix(dates, daily) {
   return { years, matrix };
 }
 
+/**
+ * 各策略逐月損益(熱力圖用,原始損益、不乘權重/商品倍率)。
+ * 回傳 { years, cols: [{ name, matrix, total? }] };matrix[月 0~11][年份索引],
+ * 該策略當月沒有任何資料列時為 null(與「有資料但損益 0」區分)。
+ * 最後一欄是「合計」:依各策略權重加總(權重 0 的策略不計入)。
+ */
+export function strategyMonthly(strategies, { startDate = null } = {}) {
+  const per = strategies.map((s) => {
+    const byYm = new Map();
+    for (const [d, v] of s.rows) {
+      if (startDate != null && d < startDate) continue;
+      const t = new Date(d);
+      const key = t.getUTCFullYear() * 100 + t.getUTCMonth() + 1;
+      byYm.set(key, (byYm.get(key) || 0) + v);
+    }
+    return { name: s.name, w: s.allocation ?? 1, byYm };
+  });
+  const ys = per.flatMap((p) => [...p.byYm.keys()].map((k) => Math.floor(k / 100)));
+  if (!ys.length) return { years: [], cols: [] };
+  const years = [];
+  for (let y = Math.min(...ys); y <= Math.max(...ys); y++) years.push(y);
+  const toMatrix = (byYm) => Array.from({ length: 12 }, (_, m) => years.map((y) => byYm.get(y * 100 + m + 1) ?? null));
+  const total = new Map();
+  for (const p of per) {
+    if (!p.w) continue;
+    for (const [k, v] of p.byYm) total.set(k, (total.get(k) || 0) + v * p.w);
+  }
+  return {
+    years,
+    cols: [
+      ...per.map((p) => ({ name: p.name, matrix: toMatrix(p.byYm) })),
+      { name: '合計', matrix: toMatrix(total), total: true },
+    ],
+  };
+}
+
 // 最大連續虧損月份數(資料貼入 T 欄):按時間順序逐月,<0 才累加
 function maxConsecutiveLossMonths(years, matrix) {
   let run = 0;

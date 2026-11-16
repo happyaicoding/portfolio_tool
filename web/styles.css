@@ -113,3 +113,21 @@ table.logtable td.t-新增, table.logtable td.t-載入 { color: var(--pos); }
 table.logtable td.t-刪除 { color: var(--neg); }
 table.logtable td:nth-child(2) { white-space: nowrap; }
 .xl td.in { min-width: 96px; } /* 金額欄(例如 1,000,000)在窄視窗也不被截斷 */
+
+/* 逐月盈虧熱力圖 */
+.hm-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; margin-bottom: 10px; }
+.hm-bar .hm-range { display: flex; align-items: center; gap: 6px; color: var(--ink); }
+.hm-bar .hm-chk { flex-direction: row; align-items: center; gap: 6px; }
+.hm-wrap { max-height: 78vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+table.hm { width: auto; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+table.hm th, table.hm td { padding: 0 4px; min-width: 46px; text-align: center; border-right: 1px solid var(--card); border-bottom: 1px solid var(--card); }
+table.hm thead th { position: sticky; top: 0; z-index: 2; background: var(--bg); height: 24px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--line); }
+table.hm tbody th { position: sticky; left: 0; z-index: 1; background: var(--bg); min-width: 84px; text-align: left; padding: 0 8px; font-weight: 400; }
+table.hm thead th:first-child { left: 0; z-index: 3; }
+table.hm tr.y th { font-weight: 700; color: var(--ink); cursor: pointer; border-top: 2px solid var(--line); }
+table.hm tr.y th, table.hm tr.y td { height: 28px; }
+table.hm tr.y td { border-top: 2px solid var(--line); font-size: 12px; }
+table.hm tr.m th, table.hm tr.m td { height: 17px; font-size: 10px; }
+table.hm tr.m th { padding-left: 22px; }
+table.hm td, table.hm th.tot { color: var(--ink); }
+table.hm td.tot, table.hm th.tot { border-left: 3px solid var(--accent); }

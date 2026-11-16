@@ -52,6 +52,20 @@
     </section>
 
     <section class="panel">
+      <h2>逐月盈虧熱力圖</h2>
+      <p class="lead">左到右為各策略(最右為依權重加總的合計),上到下為年份;點年份列展開到月。顯示的是原始損益,不乘比例與商品倍率。</p>
+      <div class="hm-bar">
+        <label>年份範圍<span class="hm-range"><select id="hmY0"></select> ~ <select id="hmY1"></select></span></label>
+        <button type="button" id="hmAll">全部年份</button>
+        <button type="button" id="hmExpand">全部展開</button>
+        <button type="button" id="hmCollapse">全部收合</button>
+        <label>色階基準<select id="hmScale"><option value="own">各策略自己的最大值</option><option value="shared">全體共用同一把尺</option></select></label>
+        <label class="hm-chk"><input type="checkbox" id="hmNum" checked> 顯示數字</label>
+      </div>
+      <div class="scroll hm-wrap"><table id="heatmap" class="hm"></table></div>
+    </section>
+
+    <section class="panel">
       <h2>創高天數明細</h2>
       <p id="highSummary" class="lead"></p>
       <div class="scroll"><table id="streaks" class="plain"></table></div>

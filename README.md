@@ -10,7 +10,7 @@
 ## 結構
 - `web/src/core.js` 計算核心(MAXDD、MovingDayDD、月/年矩陣、創高天數、資金規劃),無相依。
 - `web/src/parse.js` CSV / xlsx 解析,無相依。
-- `web/src/app.js`、`charts.js`、`index.html` 介面。
+- `web/src/app.js`、`charts.js`、`index.html` 介面。`charts.js` 的 `createHeatmap` 畫「逐月盈虧熱力圖」(各策略 × 年份,點年份展開到月;資料來自 `core.js` 的 `strategyMonthly`)。
 - `tests/` 以原 Excel 快取值驗證:`npm test`(需把原 `.xlsm` 放在專案根目錄)。
 
 ## 與 Excel 的已知差異
